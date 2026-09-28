@@ -1,72 +1,3 @@
-// 获取二维码的函数（点击「获取二维码」后再请求并显示）
-let qrcodeCountdownTimer = null;
-const DEFAULT_QRCODE_EXPIRE_SECONDS = 120;
-
-function stopQRCodeCountdown() {
-  if (qrcodeCountdownTimer) {
-    clearInterval(qrcodeCountdownTimer);
-    qrcodeCountdownTimer = null;
-  }
-}
-
-function startQRCodeCountdown($qrcodeStatus, $qrcodeImage, expireSeconds) {
-  stopQRCodeCountdown();
-
-  let remainSeconds = Number(expireSeconds);
-  if (!Number.isFinite(remainSeconds) || remainSeconds <= 0) {
-    remainSeconds = DEFAULT_QRCODE_EXPIRE_SECONDS;
-  }
-  remainSeconds = Math.floor(remainSeconds);
-
-  const updateCountdownText = function () {
-    if (remainSeconds <= 0) {
-      stopQRCodeCountdown();
-      $qrcodeImage.addClass("qrcode-image-hidden");
-      $qrcodeStatus.text("二维码已过期，请点击“刷新二维码”重新获取");
-      return;
-    }
-    $qrcodeStatus.text(
-      "请使用米家App扫码登录，二维码将在 " + remainSeconds + " 秒后过期"
-    );
-    remainSeconds -= 1;
-  };
-
-  updateCountdownText();
-  qrcodeCountdownTimer = setInterval(updateCountdownText, 1000);
-}
-
-function fetchQRCode() {
-  var $qrcodeImage = $("#qrcode-image");
-  var $qrcodeStatus = $("#qrcode-status");
-  var $refreshBtn = $("#refresh-qrcode");
-
-  if (!$qrcodeImage.length || !$qrcodeStatus.length) return;
-  stopQRCodeCountdown();
-
-  $qrcodeImage.attr("src", "");
-  $qrcodeStatus.text("正在生成二维码...");
-  $refreshBtn.text("刷新二维码");
-
-  $.get("/api/get_qrcode")
-    .done(function (data) {
-      if (data.success) {
-        if (data.already_logged_in) {
-          $qrcodeStatus.text(data.message || "已登录，无需更新");
-          $qrcodeImage.addClass("qrcode-image-hidden");
-        } else {
-          $qrcodeImage.attr("src", data.qrcode_url || "").removeClass("qrcode-image-hidden");
-          startQRCodeCountdown($qrcodeStatus, $qrcodeImage, data.expire_seconds);
-        }
-      } else {
-        $qrcodeStatus.text(data.message || "二维码生成失败，请稍后重试");
-      }
-    })
-    .fail(function (xhr) {
-      console.error("获取二维码失败:", xhr);
-      $qrcodeStatus.text("网络错误，请检查连接");
-    });
-}
-
 // ============ 字体加载检测 ============
 // 检测字体加载完成，避免图标文字闪烁
 (function () {
@@ -93,8 +24,6 @@ function fetchQRCode() {
 })();
 
 $(function () {
-  $("#refresh-qrcode").on("click", fetchQRCode);
-
   // 拉取版本
   $.get("/getversion", function (data, status) {
     console.log(data, status, data["version"]);
@@ -266,32 +195,6 @@ $(function () {
     });
   });
 
-  $("#get_music_list").on("click", () => {
-    var music_list_url = $("#music_list_url").val();
-    console.log("music_list_url", music_list_url);
-    var data = {
-      url: music_list_url,
-    };
-    $.ajax({
-      type: "POST",
-      url: "/downloadjson",
-      contentType: "application/json",
-      data: JSON.stringify(data),
-      success: (res) => {
-        if (res.ret == "OK") {
-          $("#music_list_json").val(res.content);
-        } else {
-          console.log(res);
-          alert(res.ret);
-        }
-      },
-      error: (res) => {
-        console.log(res);
-        alert(res);
-      },
-    });
-  });
-
   $("#refresh_music_tag").on("click", () => {
     $.ajax({
       type: "POST",
@@ -306,32 +209,6 @@ $(function () {
         alert(res);
       },
     });
-  });
-
-  $("#upload_yt_dlp_cookie").on("click", () => {
-    var fileInput = document.getElementById("yt_dlp_cookies_file");
-    var file = fileInput.files[0]; // 获取文件对象
-    if (file) {
-      var formData = new FormData();
-      formData.append("file", file);
-      $.ajax({
-        url: "/uploadytdlpcookie",
-        type: "POST",
-        data: formData,
-        processData: false,
-        contentType: false,
-        success: function (res) {
-          console.log(res);
-          alert("上传成功");
-        },
-        error: function (jqXHR, textStatus, errorThrown) {
-          console.log(res);
-          alert("上传失败");
-        },
-      });
-    } else {
-      alert("请选择一个文件");
-    }
   });
 
   $("#clear_cache").on("click", () => {

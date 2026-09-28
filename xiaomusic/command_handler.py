@@ -103,10 +103,6 @@ class CommandHandler:
         opvalue = self.check_full_match_cmd(device, query, ctrl_panel)
         if opvalue:
             self.log.info(f"完全匹配指令. query:{query} opvalue:{opvalue}")
-            # 自定义口令
-            if opvalue.startswith("exec#"):
-                code = opvalue.split("#", 1)[1]
-                return "exec", code
             return opvalue, ""
 
         # 按优先级顺序进行模糊匹配
@@ -146,11 +142,6 @@ class CommandHandler:
                 continue
 
             self.log.info(f"匹配到指令. opkey:{opkey} opvalue:{opvalue} oparg:{oparg}")
-
-            # 自定义口令
-            if opvalue.startswith("exec#"):
-                code = opvalue.split("#", 1)[1]
-                return "exec", code
             return opvalue, oparg
 
         self.log.info(f"未匹配到指令 {query} {ctrl_panel}")

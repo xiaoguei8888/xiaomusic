@@ -5,13 +5,6 @@ import logging
 import os
 import signal
 
-import sentry_sdk
-from sentry_sdk.integrations.asyncio import AsyncioIntegration
-from sentry_sdk.integrations.logging import (
-    LoggingIntegration,
-    ignore_logger,
-)
-
 LOGO = r"""
  __  __  _                   __  __                 _
  \ \/ / (_)   __ _    ___   |  \/  |  _   _   ___  (_)   ___
@@ -20,20 +13,6 @@ LOGO = r"""
  /_/\_\ |_|  \__,_|  \___/  |_|  |_|  \__,_| |___/ |_|  \___|
           {}
 """
-
-
-sentry_sdk.init(
-    dsn="https://ffe4962642d04b29afe62ebd1a065231@glitchtip.hanxi.cc/1",
-    integrations=[
-        AsyncioIntegration(),
-        LoggingIntegration(
-            level=logging.WARNING,
-            event_level=logging.ERROR,
-        ),
-    ],
-    # debug=True,
-)
-ignore_logger("miservice")
 
 
 def main():

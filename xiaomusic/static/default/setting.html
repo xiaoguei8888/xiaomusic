@@ -12,15 +12,6 @@
     <script src="./setting.js?version=1780982533"></script>
     <link rel="stylesheet" type="text/css" href="./setting.css?version=1780982533" />
 
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z09NC1K7ZW"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() {
-            dataLayer.push(arguments);
-        }
-        gtag("js", new Date());
-        gtag("config", "G-Z09NC1K7ZW");
-    </script>
 </head>
 
 <body>
@@ -67,11 +58,6 @@
                         <span class="material-icons" aria-hidden="true">cookie</span>
                         <span>Cookie 登录</span>
                     </button>
-                    <button class="auth-tab-button" data-tab="qrcode" role="tab" aria-selected="false"
-                        aria-controls="tab-qrcode">
-                        <span class="material-icons" aria-hidden="true">qr_code_2</span>
-                        <span>二维码登录</span>
-                    </button>
                 </div>
 
                 <!-- Tab 内容区域 -->
@@ -99,20 +85,6 @@
                                 <label for="cookie">*Cookie:<a href="https://xdocs.hanxi.cc/issues/688.html"
                                         target="_blank">文档</a></label>
                                 <input id="cookie" type="text" placeholder="粘贴完整的 Cookie 字符串" aria-required="true" />
-                            </div>
-                        </div>
-                    </div>
-                    <!-- 二维码登录面板 -->
-                    <div class="auth-tab-content" id="tab-qrcode" role="tabpanel" aria-labelledby="qrcode-tab">
-                        <div class="rows">
-                            <div class="form-item">
-                                <label>*扫码登录:</label>
-                                <!-- 显示二维码的容器：点击按钮后再显示 -->
-                                <div id="qrcode-container">
-                                    <img id="qrcode-image" src="" alt="二维码" class="qrcode-image-hidden" />
-                                    <p id="qrcode-status">点击下方按钮获取登录二维码</p>
-                                </div>
-                                <button id="refresh-qrcode">获取二维码</button>
                             </div>
                         </div>
                     </div>
@@ -410,15 +382,6 @@
                         <label for="keywords_stop">停止口令:</label>
                         <input id="keywords_stop" type="text" value="关机,暂停,停止,停止播放" />
 
-                        <label for="keywords_online_play">在线播放口令(在线搜索接口或插件):</label>
-                        <input id="keywords_online_play" type="text" value="在线播放" />
-
-                        <label for="keywords_online_playlist_play">在线搜索歌单口令(在线搜索接口或插件):</label>
-                        <input id="keywords_online_playlist_play" type="text" value="在线歌单,搜索歌单" />
-
-                        <label for="keywords_singer_play">播放歌手口令(会搜索歌手并创建歌单):</label>
-                        <input id="keywords_singer_play" type="text" value="播放歌手" />
-
                         <label for="enable_cmd_del_music">开启语音删除歌曲:</label>
                         <select id="enable_cmd_del_music">
                             <option value="true">true</option>
@@ -431,42 +394,11 @@
                 <div class="config-tab-content setting-panel" id="tab-network" role="tabpanel">
                     <div class="card-content">
                     <div class="rows">
-                        <label for="search_prefix">XIAOMUSIC_SEARCH(歌曲下载方式):</label>
-                        <select id="search_prefix">
-                            <option value="bilisearch:">bilisearch:</option>
-                            <option value="ytsearch:">ytsearch:</option>
-                        </select>
-
-                        <label for="proxy">XIAOMUSIC_PROXY(ytsearch需要):</label>
-                        <input id="proxy" type="text" placeholder="http://192.168.2.5:8080" />
-
                         <label for="web_music_proxy">网络歌曲过代理:</label>
                         <select id="web_music_proxy">
                             <option value="true" selected>true</option>
                             <option value="false">false</option>
                         </select>
-
-                        <label for="disable_download">关闭下载功能:</label>
-                        <select id="disable_download">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-
-                        <label for="enable_yt_dlp_cookies">启用yt-dlp-cookies(需要先上传yt-dlp-cookies.txt文件):</label>
-                        <select id="enable_yt_dlp_cookies">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-
-                        <label for="yt_dlp_cookies_file">上传yt_dlp_cookies.txt文件:<a
-                                href="https://xdocs.hanxi.cc/issues/210.html" target="_blank">文档</a></label>
-                        <div class="file-upload-section">
-                            <input id="yt_dlp_cookies_file" name="file" type="file" />
-                            <button id="upload_yt_dlp_cookie">
-                                <span class="material-icons">upload_file</span>
-                                <span>上传yt_dlp_cookies</span>
-                            </button>
-                        </div>
                     </div>
                     </div>
                 </div>
@@ -499,15 +431,6 @@
                 <div class="config-tab-content setting-panel" id="tab-playlist" role="tabpanel">
                     <div class="card-content">
                     <div class="rows">
-                        <label for="music_list_url" class="setting-label">歌单地址:
-                            <button class="option-inline mini-button" id="get_music_list">
-                                <span class="material-icons">sync_alt</span>
-                                <span>获取歌单</span>
-                            </button>
-                        </label>
-                        <input id="music_list_url" type="text"
-                            value="https://gist.githubusercontent.com/hanxi/dda82d964a28f8110f8fba81c3ff8314/raw/example.json" />
-
                         <label for="music_list_json">歌单内容:<a href="https://xdocs.hanxi.cc/issues/78.html"
                                 target="_blank">格式文档</a></label>
                         <textarea id="music_list_json" type="text"></textarea>
@@ -548,12 +471,6 @@
 
                         <label for="log_file">日志路径:</label>
                         <input id="log_file" type="text" value="xiaomusic.log.txt" />
-
-                        <label for="enable_analytics">开启谷歌数据统计(无敏感数据):</label>
-                        <select id="enable_analytics">
-                            <option value="true" selected>true</option>
-                            <option value="false">false</option>
-                        </select>
                     </div>
                     </div>
                 </div>
@@ -614,24 +531,6 @@
                         <div class="link-card-content">
                             <div class="link-card-title">m3u转换</div>
                             <div class="link-card-description">转换 m3u 播放列表格式</div>
-                        </div>
-                    </a>
-                    <a href="./downloadtool.html" target="_blank" class="link-card">
-                        <div class="link-card-icon">
-                            <span class="material-icons">cloud_download</span>
-                        </div>
-                        <div class="link-card-content">
-                            <div class="link-card-title">歌曲下载工具</div>
-                            <div class="link-card-description">在线搜索并下载歌曲</div>
-                        </div>
-                    </a>
-                    <a href="./merge/index.html" target="_blank" class="link-card">
-                        <div class="link-card-icon">
-                            <span class="material-icons">merge_type</span>
-                        </div>
-                        <div class="link-card-content">
-                            <div class="link-card-title">歌单合并工具</div>
-                            <div class="link-card-description">合并多个歌单文件</div>
                         </div>
                     </a>
                 </div>

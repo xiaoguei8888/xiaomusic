@@ -6,12 +6,10 @@
 import asyncio
 import copy
 import json
-import os
 import random
 import time
 from typing import TYPE_CHECKING
 
-import aiohttp
 from miservice import miio_command
 
 from xiaomusic.config import Device
@@ -28,15 +26,11 @@ from xiaomusic.const import (
     TTS_COMMAND,
 )
 from xiaomusic.events import DEVICE_CONFIG_CHANGED
-from xiaomusic.utils.file_utils import chmodfile
 from xiaomusic.utils.text_utils import (
     custom_sort_key,
     list2str,
     parse_ordinal_suffix,
 )
-
-DEFAULT_PROXY_PROBE_TIMEOUT = 3.0
-LX_SERVER_PROXY_PROBE_TIMEOUT = 8.0
 
 
 class XiaoMusicDevice:
@@ -69,7 +63,6 @@ class XiaoMusicDevice:
         self.ffmpeg_location = self.config.ffmpeg_location
         self.event_bus = getattr(xiaomusic, "event_bus", None)
 
-        self._download_proc = None  # 下载对象
         self._next_timer = None
         self.is_playing = False
         # 播放进度
@@ -87,8 +80,6 @@ class XiaoMusicDevice:
         self._pending_selection_count = 0
         self.update_playlist()
 
-        # 添加歌曲定时器
-        self._add_song_timer = None
         # TTS 播放定时器
         self._tts_timer = None
         # 用于预缓存下一首的定时器
@@ -115,61 +106,6 @@ class XiaoMusicDevice:
             return 0, duration
         offset = time.time() - self._start_time - self._paused_time
         return offset, duration
-
-    # 自动搜歌并加入当前歌单
-    async def auto_add_song(self, cur_list_name, sleep_sec=20):
-        if self.xiaomusic.js_plugin_manager is None:
-            return
-        # 是否启用自动添加
-        auto_add_song = self.xiaomusic.js_plugin_manager.get_auto_add_song()
-        is_online = self.xiaomusic.music_library.is_online_music(cur_list_name)
-        # 采用作者建议的黑名单模式，直接排除以 "_online_iwp_" 开头的自定义歌单
-        is_allowed_list = is_online and not cur_list_name.startswith("_online_iwp_")
-        # 歌单循环方式：播放全部
-        play_all = self.device.play_type == PLAY_TYPE_ALL
-        # 当前播放的歌曲是歌单中的最后一曲
-        is_last_song = False
-        cur_playlist = self._play_list
-        cur_music = self.get_cur_music()
-        play_list_len = len(cur_playlist)
-        if play_list_len != 0:
-            index = self._play_list.index(cur_music)
-            is_last_song = index == play_list_len - 1
-        # 四个条件都满足，才自动添加下一首
-        if auto_add_song and is_allowed_list and play_all and is_last_song:
-            await self._add_singer_song(cur_list_name, cur_music, sleep_sec)
-
-    # 启用延时器，搜索当前歌曲歌手的其他不在歌单内的歌曲
-    async def _add_singer_song(self, list_name, cur_music, sleep_sec):
-        # 取消之前的定时器（如果存在）
-        # self.cancel_add_song_timer()
-        # 以 '-' 分割，获取歌手名称
-        singer_name = cur_music.split("-")[1]
-        # 创建新的定时器，20秒后执行
-        self._add_song_timer = asyncio.create_task(
-            self._delayed_add_singer_song(list_name, singer_name, sleep_sec)
-        )
-
-    async def _delayed_add_singer_song(self, list_name, singer_name, sleep_sec):
-        """延迟执行添加歌手歌曲的操作"""
-        try:
-            await asyncio.sleep(sleep_sec)
-            await self.xiaomusic.add_singer_song(list_name, singer_name)
-        except asyncio.CancelledError:
-            return
-        finally:
-            # 执行完毕后清除定时器引用
-            if self._add_song_timer:  # 确保是当前任务
-                self._add_song_timer = None
-
-    def cancel_add_song_timer(self):
-        """取消添加歌曲的定时器"""
-        self.log.info("添加歌手歌曲的定时器已被取消")
-        if self._add_song_timer:
-            self._add_song_timer.cancel()
-            self._add_song_timer = None
-            return True
-        return False
 
     async def play_music(self, name):
         """播放音乐（外部接口）"""
@@ -242,10 +178,9 @@ class XiaoMusicDevice:
         # ==========================================
         else:
             self._play_list = copy.copy(latest_list)
-            is_online = self.xiaomusic.music_library.is_online_music(list_name)
 
             # 如果是本地目录歌单，且列表都是纯字符串，执行本地特定的字母自然排序
-            if not is_online and len(self._play_list) > 0:
+            if len(self._play_list) > 0:
                 has_non_str_item = any(
                     not isinstance(item, str) for item in self._play_list
                 )
@@ -273,23 +208,8 @@ class XiaoMusicDevice:
             return True
 
         self.log.info(f"本地不存在歌曲{name}")
-
-        # 根据 allow_download 参数决定行为
-        if not allow_download:
-            # playlocal 的行为：不下载，直接提示
-            await self.do_tts(f"本地不存在歌曲{name}")
-            return False
-
-        # _play 的行为：检查配置决定是否下载
-        if self.config.disable_download:
-            await self.do_tts(f"本地不存在歌曲{name}")
-            return False
-
-        # 下载歌曲
-        await self.download(search_key, name)
-        # 把文件插入到播放列表里
-        await self.add_download_music(name)
-        return True
+        await self.do_tts(f"本地不存在歌曲{name}")
+        return False
 
     async def _play_internal(self, name="", search_key="", allow_download=True):
         """播放歌曲的内部统一实现
@@ -484,16 +404,6 @@ class XiaoMusicDevice:
                 next_music = self.get_next_music()
                 if not next_music:
                     return
-
-                # 如果是网络音乐，触发预下载
-                if self.xiaomusic.music_library.is_web_music(next_music):
-                    self.log.info(f"开始后台预先缓存下一首: {next_music}")
-                    cur_playlist = self.device.cur_playlist
-                    # 巧妙利用我们重构过的时长函数，底层会自动走：没缓存 -> 去下载 -> 存硬盘 的闭环
-                    await self.xiaomusic.music_library.get_music_duration(
-                        next_music, cur_playlist
-                    )
-                    self.log.info(f"后台预先缓存完成: {next_music}")
             except asyncio.CancelledError:
                 pass
             except Exception as e:
@@ -534,55 +444,6 @@ class XiaoMusicDevice:
                 await self.set_next_music_timeout(0.5)
             return
 
-        # 2. 统一系统提示音/TTS 的白名单免探路、免墓碑机制
-        is_system_or_tts = (
-            "/music/tmp/" in url or "silence.mp3" in url or "xiaomusic_" in url
-        )
-
-        # 3. 极速探路器：帮小爱吃下所有的 404/401 炸弹
-        if not is_system_or_tts and url and url.startswith("http") and "/proxy/" in url:
-            probe_timeout = self._get_proxy_probe_timeout(origin_url)
-            is_lx_server_music = probe_timeout == LX_SERVER_PROXY_PROBE_TIMEOUT
-            self.log.info(
-                "极速探路启动，触发后端代理解析: "
-                f"timeout={probe_timeout}s lx_server={is_lx_server_music} url={url}"
-            )
-            is_url_ok = False
-            try:
-                timeout = aiohttp.ClientTimeout(total=probe_timeout)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url) as resp:
-                        # 如果 music.py 报了 404，在这里会直接被抓个正着！
-                        if resp.status in (200, 206):
-                            is_url_ok = True
-                            self.log.info(f"探路成功！接口畅通，状态码: {resp.status}")
-                        else:
-                            self.log.warning(
-                                f"探路发现死链！接口报错，状态码: {resp.status}"
-                            )
-            except Exception as e:
-                self.log.warning(f"探路超时或网络异常(插件解析失败): {e}")
-
-            # --- 探路失败（吃下404）处理逻辑 ---
-            if not is_url_ok:
-                # 统一步调！所有的失败全部使用全局唯一的 _play_failed_cnt 累计！
-                self._play_failed_cnt = getattr(self, "_play_failed_cnt", 0) + 1
-                self.log.warning(f"当前连续失败次数: {self._play_failed_cnt}")
-
-                if self._play_failed_cnt >= 5:
-                    self.log.error("连续 5 次获取歌曲死链，触发系统第二层熔断保护！")
-                    self._play_failed_cnt = 0
-                    await self.xiaomusic.handle_fatal_error(
-                        self.did, "连续多次获取歌曲失败，已为您停止播放。"
-                    )
-                    return
-
-                # 没到 5 次，静默 0.5 秒直接切下一首。小爱甚至都不知道发生过什么！
-                if self.is_playing and self._last_cmd != "stop":
-                    await asyncio.sleep(0.5)
-                    await self._play_next()
-                return
-
         # 4. 真正安全的下发播放阶段
         await self.group_force_stop_xiaoai()
         self.log.info(f"发送指令给小爱，开始播放: {url}")
@@ -609,42 +470,30 @@ class XiaoMusicDevice:
         # 获取音频时长
         sec = await self.xiaomusic.music_library.get_music_duration(name, cur_playlist)
         self._duration = sec
-        await self.xiaomusic.analytics.send_play_event(name, sec, self.hardware)
-
-        is_radio = self.xiaomusic.music_library.is_web_radio_music(name)
 
         # 5. 时长质检阶段：拦截下载回来的残次品
         if sec <= 0.1:
-            if is_radio:
-                self.log.info(f"【{name}】是电台流，无限时长，免跳过")
-                self._play_failed_cnt = 0
-            else:
-                self._play_failed_cnt = getattr(self, "_play_failed_cnt", 0) + 1
-                self.log.warning(
-                    f"【{name}】资源无效(获取时长为 {sec})，触发自动跳过。连续失败次数: {self._play_failed_cnt}"
-                )
+            self._play_failed_cnt = getattr(self, "_play_failed_cnt", 0) + 1
+            self.log.warning(
+                f"【{name}】资源无效(获取时长为 {sec})，触发自动跳过。连续失败次数: {self._play_failed_cnt}"
+            )
 
-                if self._play_failed_cnt >= 5:
-                    self.log.error(
-                        "连续获取歌曲失败达到 5 次，触发第一层终极熔断保护！"
+            if self._play_failed_cnt >= 5:
+                self.log.error(
+                    "连续获取歌曲失败达到 5 次，触发第一层终极熔断保护！"
+                )
+                self._play_failed_cnt = 0
+                asyncio.ensure_future(
+                    self.xiaomusic.handle_fatal_error(
+                        self.did, "连续多次获取歌曲失败，已为您停止播放。"
                     )
-                    self._play_failed_cnt = 0
-                    asyncio.ensure_future(
-                        self.xiaomusic.handle_fatal_error(
-                            self.did, "连续多次获取歌曲失败，已为您停止播放。"
-                        )
-                    )
-                else:
-                    await self.set_next_music_timeout(0.5)
+                )
+            else:
+                await self.set_next_music_timeout(0.5)
             return
 
         # 只有通过了 404 探路存活 -> 发送指令成功 -> 质检测出时长正常，才允许重置清零！
         self._play_failed_cnt = 0
-
-        # 计算自动添加歌曲的延迟时间
-        if sec > 30:
-            sleep_sec = min(sec / 2, 60)
-            await self.auto_add_song(cur_playlist, sleep_sec)
 
         # 计算获取时长的执行耗时
         duration_execution_time = time.time() - self._start_time
@@ -665,14 +514,6 @@ class XiaoMusicDevice:
         # 如果当前歌曲大于 2 秒，则在播放 20 秒后悄悄去下载下一首歌
         if sec > 20:
             await self.prefetch_next_song(20)
-
-    def _get_proxy_probe_timeout(self, origin_url):
-        try:
-            if self.xiaomusic.music_library.is_lx_server_proxy_url(origin_url):
-                return LX_SERVER_PROXY_PROBE_TIMEOUT
-        except Exception as e:
-            self.log.debug(f"判断 LX Server 探路超时失败: {e}")
-        return DEFAULT_PROXY_PROBE_TIMEOUT
 
     async def do_tts(self, value):
         """执行TTS（文字转语音）"""
@@ -724,67 +565,9 @@ class XiaoMusicDevice:
                 f"stop_if_xiaoai_is_playing player_stop device_id:{device_id} enable_force_stop:{self.config.enable_force_stop} ret:{ret}"
             )
 
-    def isdownloading(self):
-        """检查是否正在下载"""
-        if not self._download_proc:
-            return False
-
-        if self._download_proc.returncode is not None:
-            self.log.info(
-                f"Process exited with returncode:{self._download_proc.returncode}"
-            )
-            return False
-
-        self.log.info("Download Process is still running.")
-        return True
-
-    async def download(self, search_key, name):
-        """下载歌曲"""
-        if self._download_proc:
-            try:
-                self._download_proc.kill()
-            except ProcessLookupError:
-                pass
-
-        sbp_args = (
-            "yt-dlp",
-            f"{self.config.search_prefix}{search_key}",
-            "-x",
-            "--audio-format",
-            "mp3",
-            "--audio-quality",
-            "0",
-            "--paths",
-            self.config.download_path,
-            "-o",
-            f"{name}.mp3",
-            "--ffmpeg-location",
-            f"{self.ffmpeg_location}",
-            "--no-playlist",
-        )
-
-        if self.config.proxy:
-            sbp_args += ("--proxy", f"{self.config.proxy}")
-
-        if self.config.enable_yt_dlp_cookies:
-            sbp_args += ("--cookies", f"{self.config.yt_dlp_cookies_path}")
-
-        if self.config.loudnorm:
-            sbp_args += ("--postprocessor-args", f"-af {self.config.loudnorm}")
-
-        cmd = " ".join(sbp_args)
-        self.log.info(f"download cmd: {cmd}")
-        self._download_proc = await asyncio.create_subprocess_exec(*sbp_args)
-        await self.do_tts(f"正在下载歌曲{search_key}")
-        self.log.info(f"正在下载中 {search_key} {name}")
-        await self._download_proc.wait()
-        # 下载完成后，修改文件权限
-        file_path = os.path.join(self.config.download_path, f"{name}.mp3")
-        chmodfile(file_path)
-
     async def check_replay(self):
         """检查是否需要继续播放被打断的歌曲"""
-        if self.is_playing and not self.isdownloading():
+        if self.is_playing:
             if not self.config.continue_play:
                 # 重新播放歌曲
                 self.log.info("现在重新播放歌曲")
@@ -794,20 +577,7 @@ class XiaoMusicDevice:
                     f"继续播放歌曲. self.config.continue_play:{self.config.continue_play}"
                 )
         else:
-            self.log.info(
-                f"不会继续播放歌曲. isplaying:{self.is_playing} isdownloading:{self.isdownloading()}"
-            )
-
-    async def add_download_music(self, name):
-        """把下载的音乐加入播放列表"""
-        filepath = os.path.join(self.config.download_path, f"{name}.mp3")
-        self.xiaomusic.music_library.all_music[name] = filepath
-        # 应该很快，阻塞运行
-        await self.xiaomusic.music_library._gen_all_music_tag({name: filepath})
-        if name not in self._play_list:
-            self._play_list.append(name)
-            self.log.info(f"add_download_music add_music {name}")
-            self.log.debug(self._play_list)
+            self.log.info(f"不会继续播放歌曲. isplaying:{self.is_playing}")
 
     def get_music(self, direction="next"):
         """获取下一首或上一首音乐"""
@@ -885,94 +655,23 @@ class XiaoMusicDevice:
     async def text_to_speech(self, value):
         """文字转语音"""
         try:
-            # 检查设置中是否启用了语音TTS。如果是关闭，直接退出，避免后续走到小米TTS，导致token失效
-            if self.config.edge_tts_voice == "disable":
-                return
-            # 检查是否配置了 edge-tts 语音角色
-            elif self.config.edge_tts_voice:
-                await self._text_to_speech_edge_tts(value)
+            # 有 tts command 优先使用 tts command 说话
+            if self.hardware in TTS_COMMAND:
+                tts_cmd = TTS_COMMAND[self.hardware]
+                self.log.info("Call MiIOService tts.")
+                value = value.replace(" ", ",")  # 不能有空格
+                await miio_command(
+                    self.auth_manager.miio_service,
+                    self.did,
+                    f"{tts_cmd} {value}",
+                )
             else:
-                # 使用原有的 TTS 逻辑
-                # 有 tts command 优先使用 tts command 说话
-                if self.hardware in TTS_COMMAND:
-                    tts_cmd = TTS_COMMAND[self.hardware]
-                    self.log.info("Call MiIOService tts.")
-                    value = value.replace(" ", ",")  # 不能有空格
-                    await miio_command(
-                        self.auth_manager.miio_service,
-                        self.did,
-                        f"{tts_cmd} {value}",
-                    )
-                else:
-                    self.log.debug("Call MiNAService tts.")
-                    await self.auth_manager.mina_service.text_to_speech(
-                        self.device_id, value
-                    )
+                self.log.debug("Call MiNAService tts.")
+                await self.auth_manager.mina_service.text_to_speech(
+                    self.device_id, value
+                )
         except Exception as e:
             self.log.exception(f"Execption {e}")
-
-    async def _text_to_speech_edge_tts(self, value):
-        """使用 edge-tts 进行文字转语音"""
-        from xiaomusic.utils.music_utils import get_local_music_duration
-        from xiaomusic.utils.network_utils import text_to_mp3
-
-        self.log.info(f"_text_to_speech_edge_tts {value}")
-        try:
-            # 取消之前的 TTS 定时器
-            if self._tts_timer:
-                self._tts_timer.cancel()
-                self._tts_timer = None
-                self.log.info("已取消之前的 TTS 定时器")
-
-            # 使用 edge-tts 生成 MP3 文件
-            self.log.info(
-                f"使用 edge-tts 生成语音: {value}, voice: {self.config.edge_tts_voice}"
-            )
-            mp3_path = await text_to_mp3(
-                text=value,
-                save_dir=self.config.temp_dir,
-                voice=self.config.edge_tts_voice,
-            )
-            self.log.info(f"edge-tts 生成的文件路径: {mp3_path}")
-
-            # 生成播放 URL
-            url = self.xiaomusic.music_library._get_file_url(mp3_path)
-            self.log.info(f"TTS 播放 URL: {url}")
-
-            # 播放 TTS 音频
-            await self.group_player_play(url)
-
-            # 获取 MP3 时长
-            duration = await get_local_music_duration(mp3_path, self.config)
-            self.log.info(f"TTS 音频时长: {duration} 秒")
-
-            # 创建定时器，时长到后停止
-            if duration > 0:
-
-                async def _tts_timeout():
-                    # 增加2秒，确保小爱音箱缓存完毕后，触发后续stop
-                    await asyncio.sleep(duration + 2)
-                    try:
-                        self.log.info("TTS 播放定时器时间到")
-                        current_timer = self._tts_timer
-                        if current_timer:
-                            # 取消任务（防止任务被重复触发，即使sleep已结束）
-                            current_timer.cancel()
-                            try:
-                                await current_timer  # 等待任务取消完成，避免警告
-                            except asyncio.CancelledError:
-                                pass
-                            # 再置空引用
-                            self._tts_timer = None
-                            await self.stop(arg1="notts")
-                    except Exception as e:
-                        self.log.error(f"TTS 定时器异常: {e}")
-
-                self._tts_timer = asyncio.create_task(_tts_timeout())
-                self.log.info(f"已设置 TTS 定时器，{duration} 秒后停止")
-
-        except Exception as e:
-            self.log.exception(f"edge-tts 播放失败: {e}")
 
     async def group_player_play(self, url, name=""):
         """同一组设备播放"""

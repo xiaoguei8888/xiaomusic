@@ -1,5 +1,5 @@
 # 定义构建参数，用于指定架构和基础镜像
-ARG PYTHON_VERSION=3.14
+ARG PYTHON_VERSION=3.12
 
 # 根据不同架构选择对应的基础镜像
 FROM python:${PYTHON_VERSION}-alpine AS base-linux-amd64
@@ -25,8 +25,6 @@ RUN if [ -f /etc/alpine-release ]; then \
         # Alpine系统依赖
         apk add --no-cache \
         build-base \
-        nodejs \
-        npm \
         zlib-dev \
         jpeg-dev \
         freetype-dev \
@@ -38,8 +36,6 @@ RUN if [ -f /etc/alpine-release ]; then \
         # Debian系统依赖
         apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        nodejs \
-        npm \
         zlib1g-dev \
         libjpeg-dev \
         libfreetype6-dev \
@@ -55,16 +51,13 @@ RUN pip install -U pdm
 ENV PDM_CHECK_UPDATE=false
 
 WORKDIR /app
-COPY pyproject.toml README.md package.json ./
+COPY pyproject.toml README.md ./
 
-# 安装Python和Node.js依赖
+# 安装Python依赖
 RUN pdm install --prod --no-editable -v
-RUN npm install --loglevel=verbose
 
 # 复制应用代码
 COPY xiaomusic/ ./xiaomusic/
-COPY plugins/ ./plugins/
-COPY holiday/ ./holiday/
 COPY xiaomusic.py .
 
 # -------------------------- 运行阶段 --------------------------
@@ -76,15 +69,11 @@ FROM run-${TARGETPLATFORM//\//-} AS runner
 RUN if [ -f /etc/alpine-release ]; then \
         # Alpine运行时依赖
         apk add --no-cache \
-        ffmpeg \
-        nodejs \
-        npm; \
+        ffmpeg; \
     else \
         # Debian运行时依赖
         apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
-        nodejs \
-        npm \
         && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -93,13 +82,9 @@ WORKDIR /app
 
 # 从构建阶段复制产物
 COPY --from=builder /app/.venv ./.venv
-COPY --from=builder /app/node_modules ./node_modules/
 COPY --from=builder /app/xiaomusic/ ./xiaomusic/
-COPY --from=builder /app/plugins/ ./plugins/
-COPY --from=builder /app/holiday/ ./holiday/
 COPY --from=builder /app/xiaomusic.py .
 COPY --from=builder /app/xiaomusic/__init__.py /base_version.py
-COPY --from=builder /app/package.json .
 
 # 创建FFmpeg软链接目录（兼容不同系统的ffmpeg路径）
 RUN mkdir -p /app/ffmpeg/bin \

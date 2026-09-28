@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """系统操作和环境相关工具函数"""
 
-import asyncio
 import copy
 import hashlib
 import logging
-import os
-import platform
 import random
 import string
 import urllib.parse
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
 
-import aiohttp
 from requests.utils import cookiejar_from_dict
 
 log = logging.getLogger(__package__)
@@ -155,157 +151,3 @@ def try_add_access_control_param(config, url: str) -> str:
     ).geturl()
 
     return new_url
-
-
-def is_docker() -> bool:
-    """判断是否在 Docker 容器中运行"""
-    return os.path.exists("/app/.dockerenv")
-
-
-def get_os_architecture() -> str:
-    """
-    获取操作系统架构类型：amd64、arm64、arm-v7
-
-    Returns:
-        str: 架构类型
-    """
-    arch = platform.machine().lower()
-
-    if arch in ("x86_64", "amd64"):
-        return "amd64"
-    elif arch in ("aarch64", "arm64"):
-        return "arm64"
-    elif "arm" in arch or "armv7" in arch:
-        return "arm-v7"
-    else:
-        return f"unknown architecture: {arch}"
-
-
-async def get_latest_version(package_name: str) -> str:
-    """
-    从 PyPI 获取包的最新版本
-
-    Args:
-        package_name: 包名
-
-    Returns:
-        最新版本号，失败返回 None
-    """
-    url = f"https://pypi.org/pypi/{package_name}/json"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                data = await response.json()
-                return data["info"]["version"]
-            else:
-                return None
-
-
-async def restart_xiaomusic() -> int:
-    """
-    重启 xiaomusic 程序
-
-    Returns:
-        退出码
-    """
-    # 重启 xiaomusic 程序
-    sbp_args = (
-        "supervisorctl",
-        "restart",
-        "xiaomusic",
-    )
-
-    cmd = " ".join(sbp_args)
-    log.info(f"restart_xiaomusic: {cmd}")
-    await asyncio.sleep(2)
-    proc = await asyncio.create_subprocess_exec(*sbp_args)
-    exit_code = await proc.wait()  # 等待子进程完成
-    log.info(f"restart_xiaomusic completed with exit code {exit_code}")
-    return exit_code
-
-
-async def update_version(version: str, lite: bool = True) -> str:
-    """
-    更新 xiaomusic 版本
-
-    Args:
-        version: 版本号
-        lite: 是否使用 lite 版本
-
-    Returns:
-        结果消息
-    """
-    if not is_docker():
-        ret = "xiaomusic 更新只能在 docker 中进行"
-        log.info(ret)
-        return ret
-    lite_tag = ""
-    if lite:
-        lite_tag = "-lite"
-    arch = get_os_architecture()
-    if "unknown" in arch:
-        log.warning(f"update_version failed: {arch}")
-        return arch
-    # https://github.com/hanxi/xiaomusic/releases/download/main/app-amd64-lite.tar.gz
-    url = f"https://gproxy.hanxi.cc/proxy/hanxi/xiaomusic/releases/download/{version}/app-{arch}{lite_tag}.tar.gz"
-    target_directory = "/app"
-    return await download_and_extract(url, target_directory)
-
-
-async def download_and_extract(url: str, target_directory: str) -> str:
-    """
-    下载并解压文件
-
-    Args:
-        url: 下载 URL
-        target_directory: 目标目录
-
-    Returns:
-        结果消息
-    """
-    ret = "OK"
-    # 创建目标目录
-    os.makedirs(target_directory, exist_ok=True)
-
-    # 使用 aiohttp 异步下载文件
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                file_name = os.path.join(target_directory, url.split("/")[-1])
-                file_name = os.path.normpath(file_name)
-                if not file_name.startswith(target_directory):
-                    log.warning(f"Invalid file path: {file_name}")
-                    return "Invalid file path"
-                with open(file_name, "wb") as f:
-                    # 以块的方式下载文件，防止内存占用过大
-                    async for chunk in response.content.iter_any():
-                        f.write(chunk)
-                log.info(f"文件下载完成: {file_name}")
-
-                # 解压下载的文件
-                if file_name.endswith(".tar.gz"):
-                    await extract_tar_gz(file_name, target_directory)
-                else:
-                    ret = f"下载失败, 包有问题: {file_name}"
-                    log.warning(ret)
-
-            else:
-                ret = f"下载失败, 状态码: {response.status}"
-                log.warning(ret)
-    return ret
-
-
-async def extract_tar_gz(file_name: str, target_directory: str) -> None:
-    """
-    解压 tar.gz 文件
-
-    Args:
-        file_name: 文件路径
-        target_directory: 目标目录
-    """
-    # 使用 asyncio.create_subprocess_exec 执行 tar 解压命令
-    command = ["tar", "-xzvf", file_name, "-C", target_directory]
-    # 启动子进程执行解压命令
-    await asyncio.create_subprocess_exec(*command)
-    # 不等待子进程完成
-    log.info(f"extract_tar_gz ing {file_name}")
