@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from typing import TYPE_CHECKING
 
 import aiofiles
 from fastapi import (
@@ -15,15 +16,18 @@ from fastapi import (
 )
 
 from xiaomusic.api.dependencies import (
+    get_xiaomusic,
     verification,
-    xiaomusic,
 )
+
+if TYPE_CHECKING:
+    from xiaomusic.xiaomusic import XiaoMusic
 
 router = APIRouter(dependencies=[Depends(verification)])
 
 
 @router.get("/api/platforms")
-def get_platforms():
+def get_platforms(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取平台列表"""
     try:
         if (
@@ -42,6 +46,7 @@ def get_platforms():
 @router.get("/api/js-plugins")
 def get_js_plugins(
     enabled_only: bool = Query(False, description="是否只返回启用的插件"),
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
 ):
     """获取插件列表"""
     try:
@@ -62,7 +67,9 @@ def get_js_plugins(
 
 
 @router.put("/api/js-plugins/{plugin_name}/enable")
-def enable_js_plugin(plugin_name: str):
+def enable_js_plugin(
+    plugin_name: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """启用插件"""
     try:
         if (
@@ -79,7 +86,9 @@ def enable_js_plugin(plugin_name: str):
 
 
 @router.put("/api/js-plugins/{plugin_name}/disable")
-def disable_js_plugin(plugin_name: str):
+def disable_js_plugin(
+    plugin_name: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """禁用插件"""
     try:
         if (
@@ -96,7 +105,9 @@ def disable_js_plugin(plugin_name: str):
 
 
 @router.delete("/api/js-plugins/{plugin_name}/uninstall")
-def uninstall_js_plugin(plugin_name: str):
+def uninstall_js_plugin(
+    plugin_name: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """卸载插件"""
     try:
         if (
@@ -113,7 +124,9 @@ def uninstall_js_plugin(plugin_name: str):
 
 
 @router.post("/api/js-plugins/upload")
-async def upload_js_plugin(file: UploadFile = File(...)):
+async def upload_js_plugin(
+    file: UploadFile = File(...), xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """上传 JS 插件"""
     try:
         # 验证文件扩展名
@@ -166,7 +179,9 @@ async def upload_js_plugin(file: UploadFile = File(...)):
 
 
 @router.post("/api/js-plugins/import-online")
-async def import_online_plugin(request: Request):
+async def import_online_plugin(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """在线导入 JS 插件"""
     try:
         request_json = await request.json()
@@ -216,7 +231,7 @@ async def import_online_plugin(request: Request):
 
 
 @router.get("/api/lxServer/test")
-async def test_lx_server():
+async def test_lx_server(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """测试lxServer接口"""
     try:
         return await xiaomusic.js_plugin_manager.test_lx_server()
@@ -225,7 +240,7 @@ async def test_lx_server():
 
 
 @router.get("/api/lxServer/load")
-def get_openapi_info():
+def get_openapi_info(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取开放接口配置信息"""
     try:
         lx_server_info = xiaomusic.js_plugin_manager.get_lx_server_info()
@@ -235,7 +250,7 @@ def get_openapi_info():
 
 
 @router.post("/api/lxServer/toggle")
-def toggle_openapi():
+def toggle_openapi(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """开放接口状态切换"""
     try:
         return xiaomusic.js_plugin_manager.toggle_openapi()
@@ -244,7 +259,9 @@ def toggle_openapi():
 
 
 @router.post("/api/lxServer/updateUrl")
-async def update_openapi_url(request: Request):
+async def update_openapi_url(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """更新开放接口地址"""
     try:
         request_json = await request.json()
@@ -257,7 +274,9 @@ async def update_openapi_url(request: Request):
 
 
 @router.post("/api/lxServer/updatePlatforms")
-async def update_lxserver_platforms(request: Request):
+async def update_lxserver_platforms(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """更新LXServer平台配置"""
     try:
         request_json = await request.json()
@@ -270,7 +289,9 @@ async def update_lxserver_platforms(request: Request):
 
 
 @router.post("/api/lxServer/updateAuth")
-async def update_lxserver_auth(request: Request):
+async def update_lxserver_auth(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """更新LXServer认证信息"""
     try:
         request_json = await request.json()
@@ -287,7 +308,7 @@ async def update_lxserver_auth(request: Request):
 
 
 @router.get("/api/lxServer/userList")
-async def get_lxserver_user_list():
+async def get_lxserver_user_list(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取LXServer用户歌单"""
     try:
         lx_server_info = xiaomusic.js_plugin_manager.get_lx_server_info()
@@ -305,7 +326,7 @@ async def get_lxserver_user_list():
 
 
 @router.get("/api/lxServer/pullPlaylist")
-async def pull_lxserver_playlist():
+async def pull_lxserver_playlist(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """拉取LXServer用户歌单到plugins-config.json"""
     try:
         return await xiaomusic.js_plugin_manager.pull_lxserver_playlist()
@@ -319,6 +340,7 @@ async def convert_lxserver_playlist(
         default=None,
         description="指定要转换的歌单名称，多个用逗号分隔。为空则全量转换。可选值：我喜欢的音乐,默认歌单,或userList中的歌单名称",
     ),
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
 ):
     """将LXServer歌单转换为xiaomusic格式并保存到setting.json"""
     try:
@@ -331,7 +353,9 @@ async def convert_lxserver_playlist(
 
 
 @router.post("/api/lxServer/deletePlaylists")
-async def delete_lxserver_playlists(request: Request):
+async def delete_lxserver_playlists(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """删除LXServer歌单"""
     try:
         request_json = await request.json()
@@ -345,7 +369,9 @@ async def delete_lxserver_playlists(request: Request):
 
 
 @router.post("/api/lxServer/clearXiaomusicPlaylists")
-async def clear_xiaomusic_playlists():
+async def clear_xiaomusic_playlists(
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     """清空xiaomusic中所有_online_lx_前缀的歌单"""
     try:
         return xiaomusic.js_plugin_manager.clear_xiaomusic_playlists()
@@ -357,7 +383,7 @@ async def clear_xiaomusic_playlists():
 
 
 @router.get("/api/plugin-source/load")
-def get_plugin_source_info():
+def get_plugin_source_info(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取插件源配置信息"""
     try:
         plugin_source = xiaomusic.js_plugin_manager.get_plugin_source()
@@ -367,7 +393,7 @@ def get_plugin_source_info():
 
 
 @router.post("/api/plugin-source/refresh")
-def refresh_plugin_source():
+def refresh_plugin_source(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """更新订阅源"""
     try:
         return xiaomusic.js_plugin_manager.refresh_plugin_source()
@@ -376,7 +402,9 @@ def refresh_plugin_source():
 
 
 @router.post("/api/plugin-source/updateUrl")
-async def update_plugin_source(request: Request):
+async def update_plugin_source(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """更新插件源地址"""
     try:
         request_json = await request.json()
@@ -390,7 +418,7 @@ async def update_plugin_source(request: Request):
 
 # ----------------------------后台类型配置接口---------------------------------------
 @router.get("/api/back-conf/load")
-def get_back_conf_info():
+def get_back_conf_info(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取后台类型配置信息"""
     try:
         back_conf_info = xiaomusic.js_plugin_manager.get_back_conf_info()
@@ -400,7 +428,9 @@ def get_back_conf_info():
 
 
 @router.post("/api/back-conf/update")
-async def update_back_conf(request: Request):
+async def update_back_conf(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """更新后台类型配置"""
     try:
         request_json = await request.json()
@@ -414,7 +444,7 @@ async def update_back_conf(request: Request):
 
 # ----------------------------高级配置接口---------------------------------------
 @router.get("/api/advanced-config/load")
-def get_advanced_config():
+def get_advanced_config(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取高级配置信息"""
     try:
         advanced_config = xiaomusic.js_plugin_manager.get_advanced_config()
@@ -424,7 +454,9 @@ def get_advanced_config():
 
 
 @router.post("/api/advanced-config/update")
-async def update_advanced_config(request: Request):
+async def update_advanced_config(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """更新高级配置信息"""
     try:
         request_json = await request.json()
@@ -440,7 +472,7 @@ async def update_advanced_config(request: Request):
 
 
 @router.get("/api/box-play-platform/load")
-def get_box_play_platform():
+def get_box_play_platform(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取音响口令搜索平台偏好"""
     try:
         platform = xiaomusic.js_plugin_manager.get_box_play_platform_preference()
@@ -457,7 +489,9 @@ def get_box_play_platform():
 
 
 @router.post("/api/box-play-platform/update")
-async def update_box_play_platform(request: Request):
+async def update_box_play_platform(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """更新口令搜索平台偏好"""
     try:
         request_json = await request.json()
@@ -473,7 +507,7 @@ async def update_box_play_platform(request: Request):
 
 # ----------------------------密码验证接口---------------------------------------
 @router.get("/api/password/check")
-def check_password_required():
+def check_password_required(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """检查是否需要密码验证"""
     try:
         config = xiaomusic.js_plugin_manager._get_config_data()
@@ -484,7 +518,9 @@ def check_password_required():
 
 
 @router.post("/api/password/verify")
-async def verify_password(request: Request):
+async def verify_password(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """验证密码"""
     try:
         request_json = await request.json()

@@ -5,10 +5,10 @@
  *   ./bootstrap.min.css   (Bootstrap 5.3.3 Reboot + utilities, loaded FIRST via <link>)
  *   ./app.css             (this file, loaded LAST so bare-element rules win ties)
  *
- * This file is the concatenation of the former main.css + setting.css.
- * setting.css's duplicated global blocks (@font-face / .material-icons /
- * .fonts-loaded / .sr-only) were removed — main.css's copies (below) are canonical.
- * setting.css's #setting-scoped variants are preserved.
+ * This file is the concatenation of the two former legacy stylesheets.
+ * Duplicated global blocks (@font-face / .material-icons / .fonts-loaded /
+ * .sr-only) were removed — the first sheet's copies (below) are canonical.
+ * The #setting-scoped variants are preserved.
  * ========================================================================== */
 
 /* ==================== CSS 变量系统 ==================== */
@@ -118,6 +118,12 @@ body {
   width: 100%;
 }
 
+/* standalone settings page: fill width under the global centered flex body */
+body > .setting-header,
+body > .setting-container {
+  align-self: stretch;
+}
+
 .index_page {
   min-height: 100vh;
   height: auto;
@@ -222,7 +228,7 @@ h1 {
   box-shadow: var(--shadow-sm);
 }
 
-.xm-card-title {
+.card-title {
   font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--text-secondary);
@@ -353,7 +359,7 @@ button:active {
   transform: translateY(1px);
 }
 
-.xm-tooltip {
+.tooltip {
   visibility: hidden;
   background: var(--text-primary);
   color: var(--text-inverse);
@@ -374,7 +380,7 @@ button:active {
   pointer-events: none;
 }
 
-.xm-tooltip::after {
+.tooltip::after {
   content: '';
   position: absolute;
   top: 100%;
@@ -385,9 +391,9 @@ button:active {
   border-color: var(--text-primary) transparent transparent transparent;
 }
 
-button:hover .xm-tooltip,
-.option-inline:hover .xm-tooltip,
-.control-button:hover .xm-tooltip {
+button:hover .tooltip,
+.option-inline:hover .tooltip,
+.control-button:hover .tooltip {
   visibility: visible;
   opacity: 1;
 }
@@ -417,12 +423,12 @@ button:hover .xm-tooltip,
   color: var(--primary-color);
 }
 
-.option-inline:hover .xm-tooltip {
+.option-inline:hover .tooltip {
   left: -50px;
   bottom: 0;
 }
 
-.xm-progress {
+.progress {
   width: 100%;
   height: 8px;
   background: var(--bg-tertiary);
@@ -434,7 +440,7 @@ button:hover .xm-tooltip,
   transition: height var(--transition-fast);
 }
 
-.xm-progress:hover {
+.progress:hover {
   height: 10px;
 }
 
@@ -763,7 +769,7 @@ progress::-webkit-progress-value {
 
 /* ==================== 可见提示消息（Toast） ==================== */
 /* 位于播放器与页脚之上；z-index 低于遮罩(999)和弹窗(1000) */
-.xm-toast {
+.toast {
   position: fixed;
   left: 50%;
   bottom: calc(var(--player-bar-height) + var(--spacing-lg));
@@ -788,7 +794,7 @@ progress::-webkit-progress-value {
   overflow-wrap: break-word;
 }
 
-.xm-toast.show {
+.toast.show {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
@@ -932,7 +938,7 @@ input:focus,
     right: auto;
   }
 
-  .xm-toast {
+  .toast {
   bottom: calc(var(--player-bar-height) + var(--spacing-lg));
     max-width: calc(100vw - 20px);
   }
@@ -1318,18 +1324,18 @@ p {
   gap: var(--spacing-sm);
 }
 
-.player-bar-progress-row .xm-progress {
+.player-bar-progress-row .progress {
   flex: 1;
   margin: 0;
   height: 10px;
   background: var(--border-color);
 }
 
-.player-bar-progress-row .xm-progress:hover {
+.player-bar-progress-row .progress:hover {
   height: 12px;
 }
 
-.player-bar-progress-row .xm-progress::-webkit-progress-bar {
+.player-bar-progress-row .progress::-webkit-progress-bar {
   background: var(--border-color);
 }
 
@@ -1885,7 +1891,7 @@ body.sheet-open {
   display: none !important;
 }
 
-/* ==================== [former setting.css] ==================== */
+/* ==================== [former settings stylesheet] ==================== */
 
 #setting .header-inner {
   max-width: 1200px;
@@ -1926,7 +1932,7 @@ body.sheet-open {
   transition: box-shadow 0.3s ease;
 }#setting .setting-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-}#setting .xm-card-title {
+}#setting .card-title {
   margin: 0 0 15px 0;
   font-size: 18px;
   font-weight: 600;
@@ -1938,7 +1944,7 @@ body.sheet-open {
 }@media (max-width: 640px) {#setting .setting-card {
     padding: 15px;
     margin-bottom: 15px;
-  }#setting .xm-card-title {
+  }#setting .card-title {
     font-size: 16px;
   }
 }#setting .form-grid-2 {
@@ -2021,6 +2027,17 @@ body.sheet-open {
 }#setting #refresh-device-list {
   margin-left: 10px;
   margin-bottom: 8px;
+}#setting .device-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}#setting .device-header label {
+  margin-bottom: 0;
+}#setting .device-header button {
+  margin-left: auto;
+  flex-shrink: 0;
 }#setting .device-selection {
   display: flex;
   flex-wrap: wrap;
@@ -2405,6 +2422,8 @@ body.sheet-open {
   margin-bottom: 15px;
 }#setting .form-item:last-child {
   margin-bottom: 0;
+}#setting .rows .form-item {
+  margin-bottom: 0;
 }#setting .setting-label {
   display: flex;
   align-items: center;
@@ -2421,6 +2440,9 @@ body.sheet-open {
   display: flex;
   flex-direction: column;
   gap: 15px;
+}#setting .rows .form-row {
+  display: flex;
+  flex-direction: column;
 }#setting .rows label {
   margin-bottom: 6px;
 }#setting .rows input, #setting .rows select, #setting .rows textarea {
@@ -2541,7 +2563,7 @@ body.sheet-open {
   margin: 0;
 }
 
-#setting .accordion-body .xm-card-title {
+#setting .accordion-body .card-title {
   display: none;
 }
 
@@ -2551,5 +2573,35 @@ body.sheet-open {
 
 #setting .button-grid button,
 #setting .button-grid a {
+  margin: 0;
+}
+
+/* ==================== [standalone pages compatibility] ==================== */
+
+/* Bootstrap Reboot drops the UA paragraph top margin; the standalone tool
+   pages (m3u / debug footers) depend on it for spacing. Restore it. */
+p {
+  margin-top: 1em;
+}
+
+/* The onlineSearch pages ship their own compact search bar in an inline
+   <style>; the global form rules above out-specify that inline CSS.
+   Restore the inline intent for the elements the globals win on. */
+.search-box .search-input,
+.search-box .search-select {
+  width: auto;
+  margin-bottom: 0;
+}
+
+.search-box .search-input {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #333;
+  background-color: #fff;
+}
+
+.search-box .search-actions button {
   margin: 0;
 }

@@ -2,6 +2,7 @@
 
 import asyncio
 import urllib.parse
+from typing import TYPE_CHECKING
 
 from fastapi import (
     APIRouter,
@@ -9,9 +10,9 @@ from fastapi import (
 )
 
 from xiaomusic.api.dependencies import (
+    get_xiaomusic,
     log,
     verification,
-    xiaomusic,
 )
 from xiaomusic.api.models import (
     Did,
@@ -19,18 +20,23 @@ from xiaomusic.api.models import (
     DidVolume,
 )
 
+if TYPE_CHECKING:
+    from xiaomusic.xiaomusic import XiaoMusic
+
 router = APIRouter(dependencies=[Depends(verification)])
 
 
 @router.get("/device_list")
-async def device_list():
+async def device_list(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取设备列表"""
     devices = await xiaomusic.getalldevices()
     return {"devices": devices}
 
 
 @router.get("/getvolume")
-async def getvolume(did: str = ""):
+async def getvolume(
+    did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """获取音量"""
     if not xiaomusic.did_exist(did):
         return {"volume": 0}
@@ -40,7 +46,9 @@ async def getvolume(did: str = ""):
 
 
 @router.get("/getplayerstatus")
-async def getplayerstatus(did: str = ""):
+async def getplayerstatus(
+    did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """获取完整播放状态
 
     返回小米音箱的完整播放状态，包括：
@@ -57,7 +65,9 @@ async def getplayerstatus(did: str = ""):
 
 
 @router.post("/setvolume")
-async def setvolume(data: DidVolume):
+async def setvolume(
+    data: DidVolume, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """设置音量"""
     did = data.did
     volume = data.volume
@@ -70,7 +80,7 @@ async def setvolume(data: DidVolume):
 
 
 @router.post("/cmd")
-async def do_cmd(data: DidCmd):
+async def do_cmd(data: DidCmd, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """执行命令"""
     did = data.did
     cmd = data.cmd
@@ -90,7 +100,7 @@ async def do_cmd(data: DidCmd):
 
 
 @router.get("/cmdstatus")
-async def cmd_status():
+async def cmd_status(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """命令状态"""
     finish = await xiaomusic.is_task_finish()
     if finish:
@@ -99,7 +109,9 @@ async def cmd_status():
 
 
 @router.get("/playurl")
-async def playurl(did: str, url: str):
+async def playurl(
+    did: str, url: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """播放 URL"""
     if not xiaomusic.did_exist(did):
         return {"ret": "Did not exist"}
@@ -109,7 +121,9 @@ async def playurl(did: str, url: str):
 
 
 @router.get("/playtts")
-async def playtts(did: str, text: str):
+async def playtts(
+    did: str, text: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """播放 TTS"""
     if not xiaomusic.did_exist(did):
         return {"ret": "Did not exist"}
@@ -120,7 +134,7 @@ async def playtts(did: str, text: str):
 
 
 @router.post("/device/stop")
-async def stop(data: Did):
+async def stop(data: Did, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """关机"""
     did = data.did
     log.info(f"stop did:{did}")

@@ -7,6 +7,7 @@ import tempfile
 from dataclasses import (
     asdict,
 )
+from typing import TYPE_CHECKING
 
 from fastapi import (
     APIRouter,
@@ -34,11 +35,14 @@ from xiaomusic import (
 )
 from xiaomusic.api.dependencies import (
     config,
+    get_xiaomusic,
     log,
     verification,
-    xiaomusic,
 )
 from xiaomusic.utils.system_utils import deepcopy_data_no_sensitive_info
+
+if TYPE_CHECKING:
+    from xiaomusic.xiaomusic import XiaoMusic
 
 router = APIRouter(dependencies=[Depends(verification)])
 
@@ -57,7 +61,9 @@ def getversion():
 
 
 @router.get("/getsetting")
-async def getsetting(need_device_list: bool = False):
+async def getsetting(
+    need_device_list: bool = False, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """获取设置"""
     config_data = xiaomusic.getconfig()
     data = asdict(config_data)
@@ -71,7 +77,9 @@ async def getsetting(need_device_list: bool = False):
 
 
 @router.post("/savesetting")
-async def savesetting(request: Request):
+async def savesetting(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """保存设置"""
     try:
         data_json = await request.body()
@@ -100,7 +108,9 @@ async def savesetting(request: Request):
 
 
 @router.post("/api/system/modifiysetting")
-async def modifiysetting(request: Request):
+async def modifiysetting(
+    request: Request, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """修改部分设置"""
     try:
         data_json = await request.body()
@@ -180,7 +190,7 @@ def downloadlog():
 
 
 @router.get("/api/debug/simulate_token_expire")
-async def simulate_token_expire():
+async def simulate_token_expire(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """模拟 token 过期（调试用）
 
     访问 http://IP:PORT/api/debug/simulate_token_expire 即可触发，

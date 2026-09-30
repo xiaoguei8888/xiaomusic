@@ -3,6 +3,7 @@ import base64
 import os
 import shutil
 import uuid
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import aiohttp
@@ -26,9 +27,9 @@ from starlette.background import BackgroundTask
 from xiaomusic.api.dependencies import (
     access_key_verification,
     config,
+    get_xiaomusic,
     log,
     verification,
-    xiaomusic,
 )
 from xiaomusic.api.models import (
     DownloadOneMusic,
@@ -50,6 +51,9 @@ from xiaomusic.utils.network_utils import (
     downloadfile,
 )
 from xiaomusic.utils.system_utils import try_add_access_control_param
+
+if TYPE_CHECKING:
+    from xiaomusic.xiaomusic import XiaoMusic
 
 router = APIRouter()
 
@@ -262,7 +266,10 @@ def _process_m3u8_content(m3u8_content: str, base_url: str, is_radio: bool) -> s
 
 
 @router.post("/api/file/cleantempdir")
-async def cleantempdir(Verifcation=Depends(verification)):
+async def cleantempdir(
+    Verifcation=Depends(verification),
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     await clean_temp_dir(xiaomusic.config)
     log.info("clean_temp_dir ok")
     return {"ret": "OK"}
@@ -456,7 +463,11 @@ async def downloadplaylist(data: DownloadPlayList, Verifcation=Depends(verificat
 
 
 @router.post("/downloadonemusic")
-async def downloadonemusic(data: DownloadOneMusic, Verifcation=Depends(verification)):
+async def downloadonemusic(
+    data: DownloadOneMusic,
+    Verifcation=Depends(verification),
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     """下载单首歌曲
 
     Args:
@@ -817,7 +828,11 @@ async def delete_download_task(task_id: str, Verifcation=Depends(verification)):
 
 
 @router.post("/restart_download")
-async def restart_download(task_id: str, Verifcation=Depends(verification)):
+async def restart_download(
+    task_id: str,
+    Verifcation=Depends(verification),
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     """重新开始下载任务（仅针对已停止的任务）
 
     Args:
@@ -860,7 +875,7 @@ async def restart_download(task_id: str, Verifcation=Depends(verification)):
                 playlist_name=old_task.get("playlist_name", ""),
             )
             # 调用原有的下载函数
-            result = await downloadonemusic(data, Verifcation)
+            result = await downloadonemusic(data, Verifcation, xiaomusic)
             return result
 
     except Exception as e:
@@ -881,7 +896,11 @@ async def upload_yt_dlp_cookie(file: UploadFile = File(...)):
 
 
 @router.post("/uploadmusic")
-async def upload_music(playlist: str = Form(...), file: UploadFile = File(...)):
+async def upload_music(
+    playlist: str = Form(...),
+    file: UploadFile = File(...),
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     """上传音乐文件到当前播放列表对应的目录"""
     try:
         # 选择目标目录：优先尝试由播放列表中已有歌曲推断目录
@@ -1118,7 +1137,9 @@ async def _ffmpeg_mp3_stream(url: str, extra_headers: dict = None):
     )
 
 
-async def _proxy_handler(urlb64: str, is_radio: bool):
+async def _proxy_handler(
+    urlb64: str, is_radio: bool, xiaomusic: "XiaoMusic"
+):
     """代理处理核心逻辑
 
     Args:
@@ -1385,7 +1406,12 @@ async def _proxy_handler(urlb64: str, is_radio: bool):
 
 
 @router.get("/proxy/{type}", summary="类型化代理接口")
-async def proxy_with_type(type: str, urlb64: str = "", token: str = ""):
+async def proxy_with_type(
+    type: str,
+    urlb64: str = "",
+    token: str = "",
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     """支持路径参数的代理接口
 
     Args:
@@ -1408,14 +1434,16 @@ async def proxy_with_type(type: str, urlb64: str = "", token: str = ""):
 
         urlb64 = _b64.b64encode(real_url.encode("utf-8")).decode("utf-8")
 
-    return await _proxy_handler(urlb64, is_radio=is_radio)
+    return await _proxy_handler(urlb64, is_radio=is_radio, xiaomusic=xiaomusic)
 
 
 @router.get("/proxy", summary="基于正常下载逻辑的代理接口")
-async def proxy(urlb64: str):
+async def proxy(
+    urlb64: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """代理接口（向后兼容）
 
     Args:
         urlb64: Base64编码的URL
     """
-    return await _proxy_handler(urlb64, is_radio=False)
+    return await _proxy_handler(urlb64, is_radio=False, xiaomusic=xiaomusic)

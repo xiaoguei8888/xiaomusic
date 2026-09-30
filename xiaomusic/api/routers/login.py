@@ -1,12 +1,16 @@
 """扫码登录路由"""
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import aiohttp
 from fastapi import APIRouter, Depends
 
-from xiaomusic.api.dependencies import log, verification, xiaomusic
+from xiaomusic.api.dependencies import get_xiaomusic, log, verification
 from xiaomusic.qrcode_login import QRLoginError, QRLoginSession
+
+if TYPE_CHECKING:
+    from xiaomusic.xiaomusic import XiaoMusic
 
 router = APIRouter(dependencies=[Depends(verification)])
 
@@ -14,7 +18,7 @@ _session: QRLoginSession | None = None
 
 
 @router.get("/api/login/qrcode")
-async def get_qrcode():
+async def get_qrcode(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """生成扫码登录二维码"""
     global _session
     session = QRLoginSession(log)
@@ -29,7 +33,7 @@ async def get_qrcode():
 
     _session = session
     session.state = "pending"
-    asyncio.create_task(_wait_login(session, lp))
+    asyncio.create_task(_wait_login(session, lp, xiaomusic))
     return {
         "success": True,
         "qrcode": session.qr_data_uri,
@@ -37,7 +41,7 @@ async def get_qrcode():
     }
 
 
-async def _wait_login(session: QRLoginSession, lp: str):
+async def _wait_login(session: QRLoginSession, lp: str, xiaomusic: "XiaoMusic"):
     try:
         async with aiohttp.ClientSession() as client:
             result = await session.wait(client, lp)
@@ -64,7 +68,7 @@ async def qrcode_status():
 
 
 @router.get("/api/login/status")
-async def login_status():
+async def login_status(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """查询当前登录状态"""
     auth = xiaomusic.auth_manager
     flow = auth._ensure_flow()
@@ -76,7 +80,9 @@ async def login_status():
 
 
 @router.post("/api/login/start")
-async def login_start(payload: dict):
+async def login_start(
+    payload: dict, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """用账号密码启动登录；password 为空则用已保存的凭据。"""
     auth = xiaomusic.auth_manager
     account = payload.get("account") or auth.config.account
@@ -106,7 +112,9 @@ async def login_start(payload: dict):
 
 
 @router.post("/api/login/verify/submit")
-async def login_verify_submit(payload: dict):
+async def login_verify_submit(
+    payload: dict, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
     """提交短信/邮箱验证码。"""
     auth = xiaomusic.auth_manager
     flow = auth._ensure_flow()
@@ -119,7 +127,7 @@ async def login_verify_submit(payload: dict):
 
 
 @router.post("/api/login/verify/check")
-async def login_verify_check():
+async def login_verify_check(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     auth = xiaomusic.auth_manager
     flow = auth._ensure_flow()
     status = flow.status()
