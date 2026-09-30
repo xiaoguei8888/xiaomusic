@@ -157,9 +157,9 @@ async def modifiysetting(
         raise HTTPException(status_code=500, detail=str(err)) from err
 
 
-@router.get("/downloadlog")
-def downloadlog():
-    """下载日志"""
+@router.get("/log")
+def download_log():
+    """下载日志文件快照"""
     file_path = config.log_file
     if os.path.exists(file_path):
         # 创建一个临时文件来保存日志的快照

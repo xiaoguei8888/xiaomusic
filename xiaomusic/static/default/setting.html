@@ -126,20 +126,8 @@
                         <label for="music_path">音乐目录:</label>
                         <input id="music_path" type="text" value="music" />
 
-                        <label for="download_path">音乐下载目录(必须是music的子目录):</label>
-                        <input id="download_path" type="text" value="music/download" />
-
                         <label for="conf_path">配置文件目录:</label>
                         <input id="conf_path" type="text" />
-
-                        <label for="cache_dir">缓存文件目录:</label>
-                        <input id="cache_dir" type="text" value="music/cache" />
-
-                        <label for="cache_max_size_mb">在线歌曲缓存容量(MB, 0为不缓存):</label>
-                        <input id="cache_max_size_mb" type="number" value="500" />
-
-                        <label for="temp_path">临时文件目录:</label>
-                        <input id="temp_path" type="text" value="music/tmp" />
 
                         <label for="ffmpeg_location">ffmpeg路径:</label>
                         <input id="ffmpeg_location" type="text" value="./ffmpeg/bin" />
@@ -156,11 +144,6 @@
                         <label for="recently_added_playlist_len">最近新增的歌曲数量:</label>
                         <input id="recently_added_playlist_len" type="number" value="50" />
 
-                        <label for="enable_auto_clean_temp">启用定时清理临时文件(每日凌晨3点):</label>
-                        <select id="enable_auto_clean_temp">
-                            <option value="true" selected>开启</option>
-                            <option value="false">关闭</option>
-                        </select>
                     </div>
                     </div>
                 </div>
@@ -177,12 +160,6 @@
                     <div class="rows">
                         <label for="delay_sec">下一首歌延迟播放秒数(支持负数):</label>
                         <input id="delay_sec" type="number" value="0" />
-
-                        <label for="use_music_api">型号兼容模式:</label>
-                        <select id="use_music_api">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
 
                         <label for="continue_play">启用触屏版歌曲封面及歌词，启用继续播放(可能导致兼容性问题):</label>
                         <select id="continue_play">
@@ -216,7 +193,7 @@
 
                         <label for="active_cmd">允许唤醒的命令:</label>
                         <input id="active_cmd" type="text"
-                            value="play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music,online_play,singer_play" />
+                            value="play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music" />
                     </div>
                     </div>
                 </div>
@@ -271,21 +248,6 @@
                         <select id="get_duration_type">
                             <option value="ffprobe" selected>ffprobe</option>
                             <option value="mutagen">mutagen</option>
-                        </select>
-
-                        <label for="loudnorm">均衡歌曲音量大小(loudnorm滤镜):</label>
-                        <input id="loudnorm" type="text" placeholder="loudnorm=I=-14:TP=-1.5:LRA=6" />
-
-                        <label for="remove_id3tag">去除MP3 ID3v2和填充:</label>
-                        <select id="remove_id3tag">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
-                        </select>
-
-                        <label for="convert_to_mp3">转换为MP3:</label>
-                        <select id="convert_to_mp3">
-                            <option value="true">true</option>
-                            <option value="false" selected>false</option>
                         </select>
 
                         <label for="enable_save_tag">启用ID3标签写入文件:</label>
@@ -484,11 +446,7 @@
                             <span class="material-icons">delete_sweep</span>
                             <span>清空缓存</span>
                         </button>
-                        <button id="cleantempdir">
-                            <span class="material-icons">folder_delete</span>
-                            <span>清空临时目录</span>
-                        </button>
-                        <a href="/downloadlog" download="xiaomusic.txt">
+                        <a href="/log" download="xiaomusic.txt">
                             <button>
                                 <span class="material-icons">download</span>
                                 <span>下载日志文件</span>
@@ -522,24 +480,6 @@
                             <div class="link-card-content">
                                 <div class="link-card-title">m3u转换</div>
                                 <div class="link-card-description">转换 m3u 播放列表格式</div>
-                            </div>
-                        </a>
-                        <a href="./downloadtool.html" target="_blank" class="link-card">
-                            <div class="link-card-icon">
-                                <span class="material-icons">download</span>
-                            </div>
-                            <div class="link-card-content">
-                                <div class="link-card-title">歌曲下载工具</div>
-                                <div class="link-card-description">按歌单/单曲 URL 下载</div>
-                            </div>
-                        </a>
-                        <a href="/static/onlineSearch/index.html" target="_blank" class="link-card">
-                            <div class="link-card-icon">
-                                <span class="material-icons">search</span>
-                            </div>
-                            <div class="link-card-content">
-                                <div class="link-card-title">在线搜索</div>
-                                <div class="link-card-description">MusicFree / LX Server 在线音乐搜索</div>
                             </div>
                         </a>
                     </div>

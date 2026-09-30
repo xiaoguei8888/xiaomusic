@@ -7,12 +7,51 @@ import logging
 import random
 import string
 import urllib.parse
+from http.cookiejar import Cookie, CookieJar
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
 
-from requests.utils import cookiejar_from_dict
-
 log = logging.getLogger(__package__)
+
+
+def _create_cookie(name: str, value: str) -> Cookie:
+    """构造与 requests.utils.create_cookie 等价的 Cookie（domain='', path='/'）。"""
+    return Cookie(
+        version=0,
+        name=name,
+        value=value,
+        port=None,
+        port_specified=False,
+        domain="",
+        domain_specified=False,
+        domain_initial_dot=False,
+        path="/",
+        path_specified=True,
+        secure=False,
+        expires=None,
+        discard=True,
+        comment=None,
+        comment_url=None,
+        rest={"HttpOnly": None},
+        rfc2109=False,
+    )
+
+
+def cookiejar_from_dict(cookie_dict, cookiejar=None, overwrite=True) -> CookieJar:
+    """把 {name: value} 字典转换为 CookieJar。
+
+    行为与 requests.utils.cookiejar_from_dict 一致：domain 为空、path 为 "/"。
+    返回标准 http.cookiejar.CookieJar（requests 的 RequestsCookieJar 是其子类，
+    调用方只依赖 CookieJar 接口，因此等价可用）。
+    """
+    if cookiejar is None:
+        cookiejar = CookieJar()
+    if cookie_dict is not None:
+        names_from_jar = [cookie.name for cookie in cookiejar]
+        for name, value in cookie_dict.items():
+            if overwrite or name not in names_from_jar:
+                cookiejar.set_cookie(_create_cookie(name, value))
+    return cookiejar
 
 
 def parse_cookie_string_to_dict(cookie_string: str):

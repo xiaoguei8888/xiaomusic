@@ -1,70 +1,15 @@
-"""扫码登录路由"""
+"""登录路由"""
 
-import asyncio
 from typing import TYPE_CHECKING
 
-import aiohttp
 from fastapi import APIRouter, Depends
 
-from xiaomusic.api.dependencies import get_xiaomusic, log, verification
-from xiaomusic.qrcode_login import QRLoginError, QRLoginSession
+from xiaomusic.api.dependencies import get_xiaomusic, verification
 
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
 
 router = APIRouter(dependencies=[Depends(verification)])
-
-_session: QRLoginSession | None = None
-
-
-@router.get("/api/login/qrcode")
-async def get_qrcode(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
-    """生成扫码登录二维码"""
-    global _session
-    session = QRLoginSession(log)
-    try:
-        async with aiohttp.ClientSession() as client:
-            lp = await session.start(client)
-    except QRLoginError as e:
-        return {"success": False, "message": str(e)}
-    except Exception as e:
-        log.exception("get_qrcode failed: %s", e)
-        return {"success": False, "message": f"获取二维码失败: {e}"}
-
-    _session = session
-    session.state = "pending"
-    asyncio.create_task(_wait_login(session, lp, xiaomusic))
-    return {
-        "success": True,
-        "qrcode": session.qr_data_uri,
-        "expires_in": session.timeout,
-    }
-
-
-async def _wait_login(session: QRLoginSession, lp: str, xiaomusic: "XiaoMusic"):
-    try:
-        async with aiohttp.ClientSession() as client:
-            result = await session.wait(client, lp)
-        await xiaomusic.auth_manager.apply_qr_login(
-            result["passToken"], result["userId"]
-        )
-        session.state = "success"
-        session.message = "登录成功"
-    except QRLoginError as e:
-        session.state = "expired" if "超时" in str(e) else "error"
-        session.message = str(e)
-    except Exception as e:
-        log.exception("qr login failed: %s", e)
-        session.state = "error"
-        session.message = str(e)
-
-
-@router.get("/api/login/qrcode/status")
-async def qrcode_status():
-    """查询扫码登录状态"""
-    if _session is None:
-        return {"state": "idle", "message": ""}
-    return {"state": _session.state, "message": _session.message}
 
 
 @router.get("/api/login/status")

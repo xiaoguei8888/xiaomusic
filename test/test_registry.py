@@ -31,7 +31,7 @@ def test_every_registered_command_exists_on_xiaomusic():
 
 
 def test_special_match_cmd_outputs_registered():
-    for name in ("select_index", "exec"):
+    for name in ("select_index",):
         assert commands.is_command(name), name
     print("special_match_cmd_outputs_registered OK")
 

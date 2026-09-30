@@ -9,18 +9,13 @@ import json
 import logging
 import mimetypes
 import os
-import re
-import shutil
 import struct
 import subprocess
-import tempfile
 from dataclasses import (
     asdict,
     dataclass,
 )
-from urllib.parse import urlparse
 
-import aiohttp
 import mutagen
 from mutagen.asf import ASF
 from mutagen.flac import FLAC
@@ -43,10 +38,6 @@ from mutagen.oggvorbis import OggVorbis
 from mutagen.wave import WAVE
 from mutagen.wavpack import WavPack
 from PIL import Image
-
-from xiaomusic.const import SUPPORT_MUSIC_TYPE
-from xiaomusic.utils.file_utils import mark_audio_as_failed
-from xiaomusic.utils.network_utils import download_plugin_audio
 
 log = logging.getLogger(__package__)
 
@@ -86,123 +77,6 @@ def is_m4a(url: str) -> bool:
     """判断是否为 M4A 文件"""
     return url.endswith(".m4a")
 
-
-async def _get_web_music_duration(
-    session, url: str, config, cache_path: str = None
-) -> float:
-    """
-    异步获取网络音乐文件的完整内容并获取其时长。
-    实现：下载 -> 测速 -> 质检 -> 失败物理清理
-
-    下载完整文件，写入临时文件后调用本地工具（如 ffprobe）获取音频时长
-
-    Args:
-        session: aiohttp.ClientSession 实例
-        url: 音乐文件的 URL 地址
-        config: 包含配置信息的对象（如 ffmpeg 路径）
-
-    Returns:
-        返回音频的持续时间（秒），如果失败则返回 0
-    """
-    target_path = cache_path
-    is_temp = False
-
-    # 免疫机制。如果是本地 TTS、静音文件、系统提示音，绝对不建墓碑，直接测本地时长
-    is_system_or_tts = (
-        "music/tmp/" in url or "silence.mp3" in url or "xiaomusic_" in url
-    )
-    if is_system_or_tts:
-        parsed_url = urlparse(url)
-        # parsed_url.path 拿到的直接就是 "/music/tmp/xxx.mp3" 或 "/static/silence.mp3"
-        local_path = parsed_url.path.lstrip("/")
-
-        if os.path.exists(local_path):
-            return await get_local_music_duration(local_path, config)
-        return 0
-
-    # 如果没有开启缓存或未传递缓存路径，使用用完即焚的临时文件
-    if not target_path:
-        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
-        target_path = tmp_file.name
-        tmp_file.close()
-        is_temp = True
-    else:
-        # 确保父目录一定存在
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-
-    try:
-        # 调用 network_utils 的流式下载工具 (这里最耗时)
-        success = await download_plugin_audio(session, url, target_path)
-        if not success:
-            # 如果是由于网络 404/401 导致的下载失败，不在这里立物理墓碑！
-            # 留给它未来网络恢复后改过自新的机会，仅返回 0 时长让前线去切歌
-            log.warning(f"网络音频流下载失败(可能是临时故障): {url[:100]}")
-            return 0
-
-        # 测量本地文件时长
-        duration = await get_local_music_duration(target_path, config)
-
-        # 业务质检逻辑：防盗链和残次品拦截 (仅针对持久化缓存)
-        if not is_temp and cache_path:
-            # 只有网络畅通、文件成功下到本地，但确诊时长小于10秒（版权到期给的假静音音频）
-            # 这才是真正的永久性下架，必须立下 .failed 墓碑。
-            if duration < 10:
-                log.warning(
-                    f"检测到高仿无效资源（时长 {duration}s < 10s），确诊版权下架，触发负向缓存立碑"
-                )
-                mark_audio_as_failed(target_path)
-                return 0
-
-        return duration
-
-    except Exception as e:
-        log.error(f"Error _get_web_music_duration: {e}")
-        return 0
-    finally:
-        # 无论成功失败，只要是临时文件，立刻销毁现场
-        if is_temp and os.path.exists(target_path):
-            try:
-                os.unlink(target_path)
-            except Exception as e:
-                log.error(f"清理临时文件失败: {e}")
-
-
-async def get_web_music_duration(
-    url: str, config, cache_path: str = None
-) -> tuple[float, str]:
-    """
-    获取网络音乐时长
-
-    Args:
-        url: 音乐 URL
-        config: 配置对象
-
-    Returns:
-        (时长(秒), 最终URL)
-    """
-    duration = 0
-    try:
-        parsed_url = urlparse(url)
-        file_path = parsed_url.path
-        _, extension = os.path.splitext(file_path)
-        if extension.lower() not in SUPPORT_MUSIC_TYPE:
-            cleaned_url = parsed_url.geturl()
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    cleaned_url,
-                    allow_redirects=True,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36"
-                    },
-                ) as response:
-                    url = str(response.url)
-        # 设置总超时时间为60秒
-        timeout = aiohttp.ClientTimeout(total=60)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            duration = await _get_web_music_duration(session, url, config, cache_path)
-    except Exception as e:
-        log.error(f"获取网络音乐时长失败: {e}")
-    return duration, url
 
 
 async def get_local_music_duration(filename: str, config) -> float:
@@ -299,135 +173,6 @@ def no_padding(info) -> int:
     # this will remove all padding
     return 0
 
-
-def remove_id3_tags(input_file: str, config) -> str:
-    """
-    移除 MP3 文件的 ID3 标签以减少延迟
-
-    Args:
-        input_file: 输入文件路径
-        config: 配置对象
-
-    Returns:
-        处理后的相对路径，如果无需处理则返回 None
-    """
-    audio = MP3(input_file, ID3=ID3)
-
-    # 检查是否存在ID3 v2.3或v2.4标签
-    if not (
-        audio.tags
-        and (audio.tags.version == (2, 3, 0) or audio.tags.version == (2, 4, 0))
-    ):
-        return None
-
-    music_path = config.music_path
-    temp_dir = config.temp_dir
-
-    # 构造新文件的路径
-    out_file_name = os.path.splitext(os.path.basename(input_file))[0]
-    out_file_path = os.path.join(temp_dir, f"{out_file_name}.mp3")
-    relative_path = os.path.relpath(out_file_path, music_path)
-
-    # 路径相同的情况
-    input_absolute_path = os.path.abspath(input_file)
-    output_absolute_path = os.path.abspath(out_file_path)
-    if input_absolute_path == output_absolute_path:
-        log.info(f"File {input_file} = {out_file_path} . Skipping remove_id3_tags.")
-        return None
-
-    # 检查目标文件是否存在
-    if os.path.exists(out_file_path):
-        log.info(f"File {out_file_path} already exists. Skipping remove_id3_tags.")
-        return relative_path
-
-    # 开始去除（不再需要检查）
-    # 拷贝文件
-    shutil.copy(input_file, out_file_path)
-    outaudio = MP3(out_file_path, ID3=ID3)
-    # 删除ID3标签
-    outaudio.delete()
-    # 保存修改后的文件
-    outaudio.save(padding=no_padding)
-    log.info(f"File {out_file_path} remove_id3_tags ok.")
-    return relative_path
-
-
-def convert_file_to_mp3(input_file: str, config) -> str:
-    """
-    转换音频文件为 MP3 格式
-
-    Args:
-        input_file: 输入文件路径
-        config: 配置对象
-
-    Returns:
-        转换后的相对路径，如果无需转换则返回 None
-    """
-    music_path = config.music_path
-    temp_dir = config.temp_dir
-
-    absolute_music_path = os.path.abspath(music_path)
-
-    out_file_name = os.path.splitext(os.path.basename(input_file))[0]
-    out_file_path = os.path.join(temp_dir, f"{out_file_name}.mp3")
-    relative_path = os.path.relpath(out_file_path, music_path)
-
-    # 路径相同的情况
-    input_absolute_path = os.path.abspath(input_file)
-    output_absolute_path = os.path.abspath(out_file_path)
-    if input_absolute_path == output_absolute_path:
-        log.info(f"File {input_file} = {out_file_path} . Skipping convert_file_to_mp3.")
-        return None
-
-    # 确保输入文件位于音乐目录下
-    if not input_absolute_path.startswith(absolute_music_path + os.sep):
-        log.error(f"Invalid input file path: {input_file}")
-        return None
-
-    # 确保输出文件位于预期的临时目录或音乐目录下
-    temp_dir_abs = os.path.abspath(temp_dir)
-    if not (
-        output_absolute_path.startswith(temp_dir_abs + os.sep)
-        or output_absolute_path.startswith(absolute_music_path + os.sep)
-    ):
-        log.error(f"Invalid output file path: {out_file_path}")
-        return None
-
-    # 检查目标文件是否存在
-    if os.path.exists(out_file_path):
-        log.info(f"File {out_file_path} already exists. Skipping convert_file_to_mp3.")
-        return relative_path
-
-    # 检查是否存在 loudnorm 参数，并进行基本校验
-    loudnorm_args = []
-    if getattr(config, "loudnorm", None):
-        loudnorm_value = str(config.loudnorm)
-        # 允许常见的 ffmpeg 滤镜字符，禁止换行等控制字符
-        if re.fullmatch(r"[A-Za-z0-9_\-=:,\. \+\*/]+", loudnorm_value):
-            loudnorm_args = ["-af", loudnorm_value]
-        else:
-            log.error(f"Invalid loudnorm parameter, ignoring: {loudnorm_value!r}")
-
-    command = [
-        os.path.join(config.ffmpeg_location, "ffmpeg"),
-        "-i",
-        input_absolute_path,
-        "-f",
-        "mp3",
-        "-vn",
-        "-y",
-        *loudnorm_args,
-        out_file_path,
-    ]
-
-    try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
-        log.exception(f"Error during conversion: {e}")
-        return None
-
-    log.info(f"File {input_file} to {out_file_path} convert_file_to_mp3 ok.")
-    return relative_path
 
 
 def _to_utf8(v):
@@ -815,32 +560,4 @@ def get_real_audio_format(file_path: str) -> str:
         return "mp3"
 
 
-def build_cache_file_path(
-    datab64: str, name: str, cache_dir: str, cache_song_name: str = "cache_songs"
-) -> str:
-    """
-    根据核心字段生成唯一缓存路径，彻底免疫一切前端和插件附加的动态干扰字段。
-    """
-    if not datab64 or not cache_dir:
-        return ""
 
-    try:
-        # 1. 解开 Base64
-        raw_data = json.loads(base64.b64decode(datab64).decode("utf-8"))
-
-        # 2. 提取全系统统一的“身份证号”
-        platform = str(raw_data.get("platform", ""))
-        song_id = str(raw_data.get("id", ""))
-
-        if platform and song_id:
-            fingerprint = f"{platform}_{song_id}"
-            short_hash = hashlib.md5(fingerprint.encode()).hexdigest()[:8]
-        else:
-            short_hash = hashlib.md5(name.strip().encode()).hexdigest()[:8]
-
-    except Exception:
-        short_hash = hashlib.md5(datab64.encode()).hexdigest()[:8]
-
-    safe_name = re.sub(r"[^\w\-_.\s()（）\[\]【】]", "_", name)
-    filename = f"{short_hash}_{safe_name}.mp3"
-    return os.path.join(cache_dir, cache_song_name, filename)

@@ -113,14 +113,6 @@ class AuthManager:
         except asyncio.TimeoutError:
             self.log.warning("init_all_data 超时，可能被其他调用持有锁")
 
-    async def apply_qr_login(self, pass_token: str, user_id: str):
-        self.log.info(f"[QR] 扫码登录成功，写入凭据 userId={user_id}")
-        self._state.set_pass_token(pass_token, user_id, device_id=self.device_id)
-        self._state.data.setdefault("sids", {}).pop("micoapi", None)
-        self._state.data["sids"].pop("xiaomiio", None)
-        self._state.save()
-        await self.init_all_data(force_login=True)
-
     async def refresh_token(self):
         if self.mina_service is None:
             return

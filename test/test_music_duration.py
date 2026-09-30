@@ -1,24 +1,26 @@
 import math
 
+from xiaomusic.config import Config
 from xiaomusic.const import SUPPORT_MUSIC_TYPE
 from xiaomusic.utils.file_utils import traverse_music_directory
 from xiaomusic.utils.music_utils import get_local_music_duration
 
 
-async def test_one_music(filename):
+async def test_one_music(config, filename):
     # 获取播放时长
-    duration = await get_local_music_duration(filename)
+    duration = await get_local_music_duration(filename, config)
     sec = math.ceil(duration)
     print(f"本地歌曲 : {filename} 的时长 {duration} {sec} 秒")
 
 
 async def main(directory):
+    config = Config()
     # 获取所有歌曲文件
     local_musics = traverse_music_directory(directory, 10, [], SUPPORT_MUSIC_TYPE)
     print(local_musics)
     for _, files in local_musics.items():
         for file in files:
-            await test_one_music(file)
+            await test_one_music(config, file)
 
 
 if __name__ == "__main__":

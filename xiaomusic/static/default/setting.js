@@ -235,21 +235,6 @@ function initSettingPanel() {
       alert("清除成功");
     });
 
-    $("#cleantempdir").on("click", () => {
-      $.ajax({
-        type: "POST",
-        url: "/api/file/cleantempdir",
-        contentType: "application/json",
-        data: JSON.stringify({}),
-        success: (msg) => {
-          alert(msg.ret);
-        },
-        error: (msg) => {
-          alert(msg);
-        },
-      });
-    });
-
     $("#hostname").on("change", function () {
       const hostname = $(this).val();
       // 检查是否包含端口号（1到5位数字）

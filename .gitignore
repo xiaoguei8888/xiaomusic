@@ -174,3 +174,13 @@ node_modules
 reference/
 .aone_copilot/
 .idea/
+
+# M0 精简版：运行时垃圾文件
+xiaomusic.log.txt
+00-plugin_debug.log
+.pdm-build/
+node_modules/
+conf/.auth_backup/
+music/download/
+music/tmp/
+music/cache/

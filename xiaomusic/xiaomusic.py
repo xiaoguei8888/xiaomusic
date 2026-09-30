@@ -5,8 +5,6 @@ import os
 import re
 from logging.handlers import RotatingFileHandler
 
-import aiohttp
-
 from xiaomusic import __version__
 from xiaomusic.auth import AuthManager
 from xiaomusic.command_handler import CommandHandler
@@ -23,10 +21,6 @@ from xiaomusic.conversation import ConversationPoller
 from xiaomusic.device_manager import DeviceManager
 from xiaomusic.events import CONFIG_CHANGED, DEVICE_CONFIG_CHANGED, EventBus
 from xiaomusic.music_library import MusicLibrary
-from xiaomusic.online_music import OnlineMusicService
-from xiaomusic.plugin import PluginManager
-from xiaomusic.utils.file_utils import clean_temp_dir
-from xiaomusic.utils.network_utils import download_plugin_audio
 from xiaomusic.utils.system_utils import (
     deepcopy_data_no_sensitive_info,
     try_add_access_control_param,
@@ -61,25 +55,11 @@ class XiaoMusic:
         # 初始化配置
         self.init_config()
 
-        # 初始化在线音乐服务（延迟初始化，在 js_plugin_manager 之后）
-        self.online_music_service = None
-
         # 初始化对话轮询器（延迟初始化，在配置和服务准备好之后）
         self.conversation_poller = None
 
         # 初始化日志
         self.setup_logger()
-
-        # 初始化 JS 插件管理器
-        try:
-            from xiaomusic.js_plugin_manager import JSPluginManager
-
-            self.js_plugin_manager = JSPluginManager(self)
-            self.log.info("JS Plugin Manager initialized successfully")
-            self.js_plugin_manager.start_auto_convert()
-        except Exception as e:
-            self.log.error(f"Failed to initialize JS Plugin Manager: {e}")
-            self.js_plugin_manager = None
 
         # 初始化配置管理器（在日志准备好之后）
         self.config_manager = ConfigManager(
@@ -102,13 +82,6 @@ class XiaoMusic:
         # 启动时重新生成一次播放列表
         self.music_library.gen_all_music_list()
 
-        # 初始化在线音乐服务（在 js_plugin_manager 准备好之后）
-        self.online_music_service = OnlineMusicService(
-            log=self.log,
-            js_plugin_manager=self.js_plugin_manager,
-            xiaomusic_instance=self,  # 传递xiaomusic实例
-        )
-
         # 初始化设备管理器（在配置准备好之后）
         self.device_manager = DeviceManager(
             config=self.config,
@@ -122,9 +95,6 @@ class XiaoMusic:
             log=self.log,
             device_manager=self.device_manager,
         )
-
-        # 初始化插件
-        self.plugin_manager = PluginManager(self)
 
         # 初始化对话轮询器（在 device_id_did 准备好之后）
         self.conversation_poller = ConversationPoller(
@@ -154,17 +124,6 @@ class XiaoMusic:
     def init_config(self):
         if not os.path.exists(self.config.music_path):
             os.makedirs(self.config.music_path)
-
-        if not os.path.exists(self.config.download_path):
-            os.makedirs(self.config.download_path)
-
-        songs_cache_dir = os.path.join(
-            self.config.cache_dir, self.config.cache_song_name
-        )
-        if getattr(self.config, "cache_max_size_mb", 0) > 0 and not os.path.exists(
-            songs_cache_dir
-        ):
-            os.makedirs(songs_cache_dir, exist_ok=True)
 
         self.continue_play = self.config.continue_play
 
@@ -203,16 +162,6 @@ class XiaoMusic:
         console_handler.setFormatter(formatter)
         self.log.addHandler(console_handler)
 
-    async def auto_clean_temp_task(self):
-        while True:
-            if self.config.enable_auto_clean_temp:
-                try:
-                    await clean_temp_dir(self.config)
-                    self.log.info("auto_clean_temp_task ok")
-                except Exception as e:
-                    self.log.error(f"auto_clean_temp_task failed: {e}")
-            await asyncio.sleep(24 * 3600)
-
     async def auto_refresh_token_task(self):
         while True:
             await asyncio.sleep(self.config.token_refresh_sec)
@@ -224,9 +173,6 @@ class XiaoMusic:
     async def run_forever(self):
         self.log.info("run_forever start")
         self.music_library.try_gen_all_music_tag()  # 事件循环开始后调用一次
-        # 每日临时文件清理后台任务（替代原 crontab 定时任务）
-        if self.config.enable_auto_clean_temp:
-            self.clean_temp_task = asyncio.create_task(self.auto_clean_temp_task())
         if self.config.token_refresh_sec > 0:
             self.token_refresh_task = asyncio.create_task(
                 self.auto_refresh_token_task()
@@ -333,116 +279,6 @@ class XiaoMusic:
         # 重新生成音乐列表
         self.music_library.gen_all_music_list()
         self.update_all_playlist()
-
-    # ===========================在线搜索函数================================
-
-    def default_url(self, name="silence.mp3"):
-        """委托给 online_music_service"""
-        return self.online_music_service.default_url(name)
-
-    # 在线获取歌曲列表（委托给 online_music_service）
-    async def get_music_list_online(
-        self, plugin="all", keyword="", page=1, limit=20, **kwargs
-    ):
-        """委托给 online_music_service"""
-        return await self.online_music_service.get_music_list_online(
-            plugin, keyword, page, limit, **kwargs
-        )
-
-    # 在线获取歌单列表
-    async def get_playlist_online(
-        self, plugin="all", keyword="", page=1, limit=20, **kwargs
-    ):
-        """委托给 online_music_service"""
-        return await self.online_music_service.get_playlist_online(
-            plugin, keyword, page, limit, **kwargs
-        )
-
-    # 在线获取歌单内部歌曲详情
-    async def get_playlist_detail_online(self, id, plugin, api_type, **kwargs):
-        """委托给 online_music_service"""
-        return await self.online_music_service.get_playlist_detail_online(
-            id=id, plugin=plugin, api_type=api_type, **kwargs
-        )
-
-    @staticmethod
-    async def get_real_url_of_openapi(url: str, timeout: int = 10) -> str:
-        """委托给 OnlineMusicService 的静态方法"""
-        return await OnlineMusicService.get_real_url_of_openapi(url, timeout)
-
-    def get_plugin_proxy_url(self, origin_data):
-        """委托给 online_music_service"""
-        return self.online_music_service._get_plugin_proxy_url(origin_data)
-
-    # 调用MusicFree插件获取歌曲列表（委托给 online_music_service）
-    async def get_music_list_mf(
-        self, plugin="all", keyword="", artist="", page=1, limit=20, **kwargs
-    ):
-        """委托给 online_music_service"""
-        return await self.online_music_service.get_music_list_mf(
-            plugin, keyword, artist, page, limit, **kwargs
-        )
-
-    # 调用MusicFree插件获取歌词（委托给 online_music_service）
-    async def get_media_lyric(self, music_item):
-        """委托给 online_music_service"""
-        return await self.online_music_service.get_media_lyric(music_item)
-
-    # 在线搜索歌手，添加歌手歌单并播放
-    async def search_singer_play(self, did, search_key, name):
-        """委托给 online_music_service"""
-        return await self.online_music_service.search_singer_play(did, search_key, name)
-
-    # 追加歌手歌曲
-    async def add_singer_song(self, list_name, name):
-        """委托给 online_music_service"""
-        return await self.online_music_service.add_singer_song(list_name, name)
-
-    # 在线搜索搜索最符合的一首歌并播放
-    async def search_top_one_play(self, did, search_key, name):
-        """委托给 online_music_service"""
-        return await self.online_music_service.search_top_one_play(
-            did, search_key, name
-        )
-
-    # 口令:在线播放：在线搜索、播放
-    async def online_play(self, did="", arg1="", **kwargs):
-        """委托给 online_music_service"""
-        return await self.online_music_service.online_play(did, arg1, **kwargs)
-
-    # 口令：搜索歌单
-    async def online_playlist_play(self, did="", arg1="", **kwargs):
-        """委托给 online_music_service"""
-        return await self.online_music_service.online_playlist_play(did, arg1, **kwargs)
-
-    # 口令:播放歌手：在线搜索歌手并存为列表播放
-    async def singer_play(self, did="", arg1="", **kwargs):
-        """委托给 online_music_service"""
-        return await self.online_music_service.singer_play(did, arg1, **kwargs)
-
-    # 处理推送的歌单并播放
-    async def push_music_list_play(self, did, song_list, list_name):
-        """委托给 online_music_service"""
-        return await self.online_music_service.push_music_list_play(
-            did, song_list, list_name
-        )
-
-    async def download_plugin_audio(self, url: str, save_path: str) -> bool:
-        """提供给插件或外部调用的独立流式音频下载接口"""
-        try:
-            # 独立开个 session，防止影响全局连接池
-            async with aiohttp.ClientSession() as session:
-                return await download_plugin_audio(session, url, save_path)
-        except Exception as e:
-            self.log.error(f"XiaoMusic.download_plugin_audio failed: {e}")
-            return False
-
-    async def exec(self, did="", arg1=None, **kwargs):
-        self.auth_manager._cur_did = did
-        code = arg1 if arg1 else 'code1("hello")'
-        await self.plugin_manager.execute_plugin(code)
-
-    # ===========================================================
 
     def _find_real_music_list_name(self, list_name):
         """模糊搜索播放列表名称（委托给 music_library）"""

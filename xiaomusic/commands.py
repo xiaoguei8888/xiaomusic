@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 # 所有可被命令层派发的命令名（即 XiaoMusic 上的方法名）。
-# key_word_dict 的每个值、以及 match_cmd 直接返回的 "select_index"/"exec"，
+# key_word_dict 的每个值、以及 match_cmd 直接返回的 "select_index"，
 # 都必须落在此集合内，否则视为配置或代码错误。
 COMMAND_NAMES: frozenset[str] = frozenset(
     {
@@ -34,13 +34,8 @@ COMMAND_NAMES: frozenset[str] = frozenset(
         "cmd_del_music",
         "add_to_favorites",
         "del_from_favorites",
-        # 在线
-        "online_play",
-        "online_playlist_play",
-        "singer_play",
         # 交互（由 match_cmd 直接返回，不在口令表中）
         "select_index",
-        "exec",
     }
 )
 

@@ -4,7 +4,7 @@ import argparse
 import base64
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import get_type_hints
 
 from xiaomusic.const import (
@@ -14,7 +14,6 @@ from xiaomusic.const import (
     PLAY_TYPE_SEQ,
     PLAY_TYPE_SIN,
 )
-from xiaomusic.utils.system_utils import validate_proxy
 
 
 # 默认口令
@@ -89,27 +88,17 @@ class Config:
     cookie: str = ""
     verbose: bool = os.getenv("XIAOMUSIC_VERBOSE", "").lower() == "true"
     music_path: str = os.getenv("XIAOMUSIC_MUSIC_PATH", "music")
-    temp_path: str = os.getenv("XIAOMUSIC_TEMP_PATH", "music/tmp")
-    download_path: str = os.getenv("XIAOMUSIC_DOWNLOAD_PATH", "music/download")
     conf_path: str = os.getenv("XIAOMUSIC_CONF_PATH", "conf")
-    cache_dir: str = os.getenv("XIAOMUSIC_CACHE_DIR", "music/cache")
-    cache_max_size_mb: int = int(os.getenv("XIAOMUSIC_CACHE_MAX_SIZE_MB", "500"))
-    cache_song_name: str = os.getenv("XIAOMUSIC_CACHE_SONG_NAME", "cache_songs")
     hostname: str = os.getenv("XIAOMUSIC_HOSTNAME", "http://192.168.2.5")
     port: int = int(os.getenv("XIAOMUSIC_PORT", "8090"))  # 监听端口
     public_port: int = int(os.getenv("XIAOMUSIC_PUBLIC_PORT", 58090))  # 歌曲访问端口
-    proxy: str = os.getenv("XIAOMUSIC_PROXY", None)
-    loudnorm: str = os.getenv("XIAOMUSIC_LOUDNORM", None)  # 均衡音量参数
-    search_prefix: str = os.getenv(
-        "XIAOMUSIC_SEARCH", "bilisearch:"
-    )  # "bilisearch:" or "ytsearch:"
     ffmpeg_location: str = os.getenv("XIAOMUSIC_FFMPEG_LOCATION", "./ffmpeg/bin")
     get_duration_type: str = os.getenv(
         "XIAOMUSIC_GET_DURATION_TYPE", "ffprobe"
     )  # mutagen or ffprobe
     active_cmd: str = os.getenv(
         "XIAOMUSIC_ACTIVE_CMD",
-        "play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music,online_play,singer_play,online_playlist_play",
+        "play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music",
     )
     exclude_dirs: str = os.getenv("XIAOMUSIC_EXCLUDE_DIRS", "@eaDir,tmp")
     ignore_tag_dirs: str = os.getenv("XIAOMUSIC_IGNORE_TAG_DIRS", "")
@@ -119,21 +108,9 @@ class Config:
     )
     httpauth_username: str = os.getenv("XIAOMUSIC_HTTPAUTH_USERNAME", "")
     httpauth_password: str = os.getenv("XIAOMUSIC_HTTPAUTH_PASSWORD", "")
-    music_list_url: str = os.getenv("XIAOMUSIC_MUSIC_LIST_URL", "")
-    music_list_json: str = os.getenv("XIAOMUSIC_MUSIC_LIST_JSON", "")
     custom_play_list_json: str = os.getenv("XIAOMUSIC_CUSTOM_PLAY_LIST_JSON", "")
-    disable_download: bool = (
-        os.getenv("XIAOMUSIC_DISABLE_DOWNLOAD", "false").lower() == "true"
-    )
     key_word_dict: dict[str, str] = field(default_factory=default_key_word_dict)
     key_match_order: list[str] = field(default_factory=default_key_match_order)
-    use_music_api: bool = (
-        os.getenv("XIAOMUSIC_USE_MUSIC_API", "false").lower() == "true"
-    )
-    use_music_audio_id: str = os.getenv(
-        "XIAOMUSIC_USE_MUSIC_AUDIO_ID", "436490277987655"
-    )
-    use_music_id: str = os.getenv("XIAOMUSIC_USE_MUSIC_ID", "355454500")
     log_file: str = os.getenv("XIAOMUSIC_LOG_FILE", "xiaomusic.log.txt")
     # 模糊搜索匹配的最低相似度阈值
     fuzzy_match_cutoff: float = float(os.getenv("XIAOMUSIC_FUZZY_MATCH_CUTOFF", "0.6"))
@@ -152,21 +129,10 @@ class Config:
     # 多结果处理方式: random=随机播放, first=从第一个开始播放
     multi_result_action: str = os.getenv("XIAOMUSIC_MULTI_RESULT_ACTION", "random")
     stop_tts_msg: str = os.getenv("XIAOMUSIC_STOP_TTS_MSG", "")
-    enable_config_example: bool = False
-
     keywords_playlocal: str = os.getenv(
         "XIAOMUSIC_KEYWORDS_PLAYLOCAL", "播放本地歌曲,本地播放歌曲"
     )
     keywords_play: str = os.getenv("XIAOMUSIC_KEYWORDS_PLAY", "播放歌曲,放歌曲")
-    keywords_online_play: str = os.getenv(
-        "XIAOMUSIC_KEYWORDS_ONLINE_PLAY", "在线播放,搜索歌曲"
-    )
-    keywords_online_playlist_play: str = os.getenv(
-        "XIAOMUSIC_KEYWORDS_ONLINE_PLAYLIST", "在线歌单,搜索歌单"
-    )
-    keywords_singer_play: str = os.getenv(
-        "XIAOMUSIC_KEYWORDS_SINGER_PLAY", "播放歌手,搜索歌手"
-    )
     keywords_stop: str = os.getenv(
         "XIAOMUSIC_KEYWORDS_STOP", "关机,暂停,停止,停止播放,关闭,退出,关掉音乐"
     )
@@ -183,10 +149,6 @@ class Config:
     group_list: str = os.getenv(
         "XIAOMUSIC_GROUP_LIST", ""
     )  # did1:group_name,did2:group_name
-    remove_id3tag: bool = (
-        os.getenv("XIAOMUSIC_REMOVE_ID3TAG", "false").lower() == "true"
-    )
-    convert_to_mp3: bool = os.getenv("CONVERT_TO_MP3", "false").lower() == "true"
     delay_sec: int = int(os.getenv("XIAOMUSIC_DELAY_SEC", 0))  # 下一首歌延迟播放秒数
     continue_play: bool = os.getenv("XIAOMUSIC_CONTINUE_PLAY", "true").lower() == "true"
     pull_ask_sec: int = int(os.getenv("XIAOMUSIC_PULL_ASK_SEC", "1"))
@@ -198,9 +160,6 @@ class Config:
     )
     enable_save_tag: bool = (
         os.getenv("XIAOMUSIC_ENABLE_SAVE_TAG", "false").lower() == "true"
-    )
-    enable_yt_dlp_cookies: bool = (
-        os.getenv("XIAOMUSIC_ENABLE_YT_DLP_COOKIES", "false").lower() == "true"
     )
     get_ask_by_mina: bool = (
         os.getenv("XIAOMUSIC_GET_ASK_BY_MINA", "false").lower() == "true"
@@ -230,15 +189,7 @@ class Config:
     enable_cmd_del_music: bool = (
         os.getenv("XIAOMUSIC_ENABLE_CMD_DEL_MUSIC", "false").lower() == "true"
     )
-    # 网络歌曲使用proxy
-    web_music_proxy: bool = (
-        os.getenv("XIAOMUSIC_WEB_MUSIC_PROXY", "true").lower() == "true"
-    )
     edge_tts_voice: str = os.getenv("XIAOMUSIC_EDGE_TTS_VOICE", "")
-    # 是否启用定时清理临时文件
-    enable_auto_clean_temp: bool = (
-        os.getenv("XIAOMUSIC_ENABLE_AUTO_CLEAN_TEMP", "true").lower() == "true"
-    )
 
     def append_keyword(self, keys, action):
         for key in keys.split(","):
@@ -258,9 +209,6 @@ class Config:
         self.key_word_dict = default_key_word_dict()
         self.append_keyword(self.keywords_playlocal, "playlocal")
         self.append_keyword(self.keywords_play, "play")
-        self.append_keyword(self.keywords_online_play, "online_play")
-        self.append_keyword(self.keywords_online_playlist_play, "online_playlist_play")
-        self.append_keyword(self.keywords_singer_play, "singer_play")
         self.append_keyword(self.keywords_stop, "stop")
         self.append_keyword(self.keywords_playlist, "play_music_list")
         self.append_user_keyword()
@@ -273,18 +221,11 @@ class Config:
         self._exclude_dirs_set = set(self.exclude_dirs.split(","))
 
     def __post_init__(self) -> None:
-        if self.proxy:
-            validate_proxy(self.proxy)
         if self.hostname:
             if not self.hostname.startswith(("http://", "https://")):
                 self.hostname = f"http://{self.hostname}"  # 默认 http
 
         self.init()
-        # 保存配置到 config-example.json 文件
-        if self.enable_config_example:
-            with open("config-example.json", "w") as f:
-                data = asdict(self)
-                json.dump(data, f, ensure_ascii=False, indent=2)
 
     @classmethod
     def from_options(cls, options: argparse.Namespace) -> Config:
@@ -354,32 +295,23 @@ class Config:
         filename = os.path.join(self.conf_path, "setting.json")
         return filename
 
-    @property
-    def tag_cache_path(self):
-        if (len(self.cache_dir) > 0) and (not os.path.exists(self.cache_dir)):
-            os.makedirs(self.cache_dir)
-        filename = os.path.join(self.cache_dir, "tag_cache.json")
-        return filename
+    def _conf_dir(self) -> str:
+        # 兼容旧配置 conf_path 为空的情况，与 getsettingfile 的兜底逻辑一致
+        if not self.conf_path:
+            self.conf_path = "conf"
+        os.makedirs(self.conf_path, exist_ok=True)
+        return self.conf_path
 
     @property
-    def picture_cache_path(self):
-        cache_path = os.path.join(self.cache_dir, "picture_cache")
-        if not os.path.exists(cache_path):
-            os.makedirs(cache_path)
-        return cache_path
+    def tag_cache_path(self) -> str:
+        # 标签缓存放在配置目录下
+        return os.path.join(self._conf_dir(), "tag_cache.json")
 
     @property
-    def yt_dlp_cookies_path(self):
-        if not os.path.exists(self.conf_path):
-            os.makedirs(self.conf_path)
-        cookies_path = os.path.join(self.conf_path, "yt-dlp-cookie.txt")
-        return cookies_path
-
-    @property
-    def temp_dir(self):
-        if not os.path.exists(self.temp_path):
-            os.makedirs(self.temp_path)
-        return self.temp_path
+    def picture_cache_path(self) -> str:
+        path = os.path.join(self._conf_dir(), "picture_cache")
+        os.makedirs(path, exist_ok=True)
+        return path
 
     def get_play_type_tts(self, play_type):
         if play_type == PLAY_TYPE_ONE:

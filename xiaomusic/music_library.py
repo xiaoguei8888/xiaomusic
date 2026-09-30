@@ -4,7 +4,6 @@
 """
 
 import asyncio
-import base64
 import copy
 import json
 import os
@@ -12,51 +11,29 @@ import time
 import urllib.parse
 from collections import OrderedDict
 from dataclasses import asdict
-from urllib.parse import parse_qs, urlparse
 
 from xiaomusic.const import SUPPORT_MUSIC_TYPE
 from xiaomusic.events import CONFIG_CHANGED
 from xiaomusic.utils.file_utils import (
-    clean_old_caches,
-    is_cache_valid,
     not_in_dirs,
     traverse_music_directory,
 )
 from xiaomusic.utils.music_utils import (
     Metadata,
-    build_cache_file_path,
     extract_audio_metadata,
     get_local_music_duration,
     save_picture_by_base64,
     set_music_tag_to_file,
 )
-from xiaomusic.utils.network_utils import MusicUrlCache
 from xiaomusic.utils.system_utils import try_add_access_control_param
 from xiaomusic.utils.text_utils import custom_sort_key, find_best_match, fuzzyfinder
 
-try:
-    from xiaomusic.utils.music_utils import get_web_music_duration
-except ImportError:  # 重构移除了该辅助函数，缺失时降级为不获取网络时长
-    get_web_music_duration = None
-
-# 短 token 缓存，避免长 URL 超出小爱音箱固件限制
-_proxy_token_cache: dict = {}  # token -> (origin_url, is_radio)
-
-
-def set_proxy_token(token: str, origin_url: str, is_radio: bool) -> None:
-    """存储 token -> (origin_url, is_radio) 映射"""
-    _proxy_token_cache[token] = (origin_url, bool(is_radio))
-
-
-def get_proxy_token(token: str):
-    """查询 token 对应的 (origin_url, is_radio)，不存在返回 None"""
-    return _proxy_token_cache.get(token)
 
 
 class MusicLibrary:
     """音乐库管理类
 
-    负责管理本地和网络音乐库，包括：
+    负责管理本地音乐库，包括：
     - 音乐列表生成和管理
     - 播放列表的增删改查
     - 音乐搜索和模糊匹配
@@ -81,15 +58,10 @@ class MusicLibrary:
         self.event_bus = event_bus
 
         # 音乐库数据
-        self.all_music = {}  # 所有音乐 {name: filepath/url}
-        self.playlist_music_urls = {}  # 精准隔离字典 { "歌单名::歌曲名": url }
+        self.all_music = {}  # 所有音乐 {name: filepath}
         self.music_list = {}  # 播放列表 {list_name: [music_names]}
         self.default_music_list_names = []  # 非自定义歌单名称列表
         self.custom_play_list = None  # 自定义播放列表缓存
-
-        # 网络音乐相关
-        self._all_radio = {}  # 所有电台
-        self._web_music_api = {}  # 需要通过API获取的网络音乐
 
         # 搜索索引
         self._extra_index_search = {}  # 额外搜索索引 {filepath: name}
@@ -97,10 +69,7 @@ class MusicLibrary:
         # 标签管理
         self.all_music_tags = {}  # 音乐标签缓存
         self._tag_generation_task = False  # 标签生成任务标志
-        self._web_music_duration_cache = {}  # 网络音乐时长缓存（仅内存）
 
-        # URL处理相关
-        self.url_cache = MusicUrlCache()  # URL缓存
 
     def gen_all_music_list(self):
         """生成所有音乐列表
@@ -108,7 +77,6 @@ class MusicLibrary:
         扫描音乐目录，生成本地音乐列表和播放列表。
         """
         self.all_music = {}
-        self.playlist_music_urls = {}  # 同步清空
         all_music_by_dir = {}
 
         # 扫描本地音乐目录
@@ -127,11 +95,7 @@ class MusicLibrary:
             # 处理目录名称
             if dir_name == os.path.basename(self.config.music_path):
                 dir_name = "其他"
-            if (
-                self.config.music_path != self.config.download_path
-                and dir_name == os.path.basename(self.config.download_path)
-            ):
-                dir_name = "下载"
+
 
             if dir_name not in all_music_by_dir:
                 all_music_by_dir[dir_name] = {}
@@ -148,42 +112,33 @@ class MusicLibrary:
         self.music_list = OrderedDict(
             {
                 "所有歌曲": [],
-                "所有电台": [],
-                "全部": [],  # 包含所有歌曲和所有电台
-                "下载": [],  # 下载目录下的
+                "全部": [],  # 包含所有本地歌曲
                 "其他": [],  # 主目录下的
                 "最近新增": [],  # 按文件时间排序
             }
         )
 
-        # 最近新增(不包含网络歌单)
+
+        # 最近新增
         self.music_list["最近新增"] = sorted(
             self.all_music.keys(),
             key=lambda x: os.path.getmtime(self.all_music[x]),
             reverse=True,
         )[: self.config.recently_added_playlist_len]
 
-        # 补充网络歌单
-        try:
-            # NOTE: 函数内会更新 self.all_music, self.music_list；重建 self._all_radio
-            self._append_music_list()
-        except Exception as e:
-            self.log.exception(f"Execption {e}")
-
-        # 全部，所有歌曲（排除电台）
+        # 全部，所有歌曲
         self.music_list["全部"] = list(self.all_music.keys())
-        self.music_list["所有歌曲"] = [
-            name for name in self.all_music.keys() if name not in self._all_radio
-        ]
+        self.music_list["所有歌曲"] = list(self.all_music.keys())
+
 
         # 文件夹歌单
         for dir_name, musics in all_music_by_dir.items():
             self.music_list[dir_name] = list(musics.keys())
 
         # 歌单排序
-        for list_name, play_list in self.music_list.items():
-            if not self.is_online_music(list_name):
-                play_list.sort(key=custom_sort_key)
+        for play_list in self.music_list.values():
+            play_list.sort(key=custom_sort_key)
+
 
         # 非自定义歌单
         self.default_music_list_names = list(self.music_list.keys())
@@ -194,56 +149,12 @@ class MusicLibrary:
         # 重建索引
         self._extra_index_search = {}
         for name, filepath in self.all_music.items():
-            # 如果不是 radio，则增加索引
-            if not self.is_web_radio_music(name):
-                self._extra_index_search[filepath] = name
+            self._extra_index_search[filepath] = name
+
 
         # all_music 更新，重建 tag（仅在事件循环启动后才会执行）
         self.try_gen_all_music_tag()
 
-    def _append_music_list(self):
-        """给歌单里补充网络歌单"""
-        if not self.config.music_list_json:
-            return
-
-        self._all_radio = {}
-        self._web_music_api = {}
-        music_list = json.loads(self.config.music_list_json)
-
-        try:
-            for item in music_list:
-                list_name = item.get("name")
-                musics = item.get("musics")
-                if (not list_name) or (not musics):
-                    continue
-
-                one_music_list = []
-                for music in musics:
-                    name = music.get("name")
-                    url = music.get("url")
-                    music_type = music.get("type")
-                    if (not name) or (not url):
-                        continue
-
-                    self.all_music[name] = url
-                    # 存入带歌单名的专属链接，防止被同名覆盖！
-                    self.playlist_music_urls[f"{list_name}::{name}"] = url
-                    one_music_list.append(name)
-
-                    # 处理电台列表
-                    if music_type == "radio":
-                        self._all_radio[name] = url
-                    if music.get("api"):
-                        self._web_music_api[name] = music
-
-                self.log.debug(one_music_list)
-                # 歌曲名字相同会覆盖
-                self.music_list[list_name] = one_music_list
-
-            if self._all_radio:
-                self.music_list["所有电台"] = list(self._all_radio.keys())
-        except Exception as e:
-            self.log.exception(f"Execption {e}")
 
     def refresh_custom_play_list(self):
         """刷新自定义歌单"""
@@ -448,61 +359,6 @@ class MusicLibrary:
         self.save_custom_play_list()
         return True
 
-    def update_music_list_json(self, list_name, update_list, append=False):
-        """
-        更新配置的音乐歌单Json，如果歌单存在则根据 append：False:覆盖； True:追加
-        Args:
-            list_name: 更新的歌单名称
-            update_list: 更新的歌单列表
-            append: 追加歌曲，默认 False
-
-        Returns:
-            list: 转换后的音乐项目列表
-        """
-        # 更新配置中的音乐列表
-        if self.config.music_list_json:
-            music_list = json.loads(self.config.music_list_json)
-        else:
-            music_list = []
-
-        # 检查是否已存在同名歌单
-        existing_index = None
-        for i, item in enumerate(music_list):
-            if item.get("name") == list_name:
-                existing_index = i
-                break
-
-        # 构建新歌单数据
-        new_music_items = [
-            {"name": item["name"], "url": item["url"], "type": item["type"]}
-            for item in update_list
-        ]
-
-        if existing_index is not None:
-            if append:
-                # 追加模式：将新项目添加到现有歌单中，避免重复
-                existing_musics = music_list[existing_index]["musics"]
-                existing_names = {music["name"] for music in existing_musics}
-
-                # 只添加不存在的项目
-                for new_item in new_music_items:
-                    if new_item["name"] not in existing_names:
-                        existing_musics.append(new_item)
-
-                music_list[existing_index]["musics"] = existing_musics
-            else:
-                # 覆盖模式：替换整个歌单
-                music_list[existing_index] = {
-                    "name": list_name,
-                    "musics": new_music_items,
-                }
-        else:
-            # 添加新歌单
-            new_music_list = {"name": list_name, "musics": new_music_items}
-            music_list.append(new_music_list)
-
-        # 保存更新后的配置
-        self.config.music_list_json = json.dumps(music_list, ensure_ascii=False)
 
     def _resolve_play_list(self, name, create_if_missing=False):
         """获取歌单列表引用，同时返回是否需要持久化自定义歌单
@@ -686,7 +542,7 @@ class MusicLibrary:
         return ""
 
     def is_music_exist(self, name):
-        """判断本地音乐是否存在，网络歌曲不判断
+        """判断本地音乐是否存在
 
         Args:
             name: 音乐名称
@@ -696,54 +552,9 @@ class MusicLibrary:
         """
         if name not in self.all_music:
             return False
-        if self.is_web_music(name):
-            return True
-        filename = self.get_filename(name)
-        if filename:
-            return True
-        return False
+        return bool(self.get_filename(name))
 
-    def is_web_radio_music(self, name):
-        """是否是网络电台
 
-        Args:
-            name: 音乐名称
-
-        Returns:
-            bool: 是否是网络电台
-        """
-        return name in self._all_radio
-
-    # 是否是在线音乐
-    @staticmethod
-    def is_online_music(cur_playlist):
-        # cur_playlist 开头是 '_online_' 则表示online
-        return cur_playlist.startswith("_online_")
-
-    def is_web_music(self, name):
-        """是否是网络歌曲
-
-        Args:
-            name: 音乐名称
-
-        Returns:
-            bool: 是否是网络歌曲
-        """
-        if name not in self.all_music:
-            return False
-        url = self.all_music[name]
-        return url.startswith(("http://", "https://", "self://"))
-
-    def is_need_use_play_music_api(self, name):
-        """是否是需要通过api获取播放链接的网络歌曲
-
-        Args:
-            name: 音乐名称
-
-        Returns:
-            bool: 是否需要通过API获取
-        """
-        return name in self._web_music_api
 
     # ==================== 标签管理 ====================
 
@@ -771,14 +582,6 @@ class MusicLibrary:
                 f"{self.config.hostname}:{self.config.public_port}/picture/{encoded_name}",
             )
 
-        # 如果是网络音乐，获取时长
-        if self.is_web_music(name):
-            try:
-                duration = await self.get_music_duration(name)
-                if duration > 0:
-                    tags["duration"] = duration
-            except Exception as e:
-                self.log.exception(f"获取网络音乐 {name} 时长失败: {e}")
         return tags
 
     def set_music_tag(self, name, info):
@@ -809,164 +612,30 @@ class MusicLibrary:
                 info.picture, self.config.picture_cache_path, file_path
             )
 
-        if self.config.enable_save_tag and (not self.is_web_music(name)):
+        if self.config.enable_save_tag:
             set_music_tag_to_file(file_path, Metadata(tags))
 
         self.all_music_tags[name] = tags
         self.try_save_tag_cache()
         return "OK"
 
-    def _extract_cache_path_from_url(self, url: str, name: str) -> str:
-        """从代理 URL 中提取 datab64 并计算物理缓存路径"""
-        if not url or not url.startswith("self:///api/proxy/plugin-url"):
-            return ""
-        try:
-            query = urlparse(url).query
-            params = parse_qs(query)
-            datab64 = params.get("data", [""])[0]
-
-            if datab64:
-                actual_cache_dir = self.config.cache_dir
-                if not actual_cache_dir.startswith(self.config.music_path):
-                    actual_cache_dir = os.path.join(
-                        self.config.music_path, actual_cache_dir.lstrip("\\/")
-                    )
-
-                # 将纠正后的 actual_cache_dir 传给底层
-                return build_cache_file_path(
-                    datab64, name, actual_cache_dir, self.config.cache_song_name
-                )
-        except Exception as e:
-            self.log.debug(f"提取缓存路径失败: {e}")
-        return ""
-
-    def is_lx_server_proxy_url(self, origin_url: str) -> bool:
-        """判断原始 plugin-url 是否来自 LX Server 搜索结果。"""
-        if not origin_url or not origin_url.startswith("self:///api/proxy/plugin-url"):
-            return False
-
-        try:
-            query = urlparse(origin_url).query
-            params = parse_qs(query)
-            datab64 = params.get("data", [""])[0].replace(" ", "+")
-            if not datab64:
-                return False
-
-            missing_padding = len(datab64) % 4
-            if missing_padding:
-                datab64 += "=" * (4 - missing_padding)
-
-            payload = json.loads(base64.b64decode(datab64).decode("utf-8"))
-            return isinstance(payload, dict) and isinstance(payload.get("_raw"), dict)
-        except Exception as e:
-            self.log.debug(f"判断 LX Server 代理 URL 失败: {e}")
-            return False
 
     async def get_music_duration(self, name: str, playlist_name: str = None) -> float:
         """获取歌曲时长
 
-        优先从缓存中读取，如果缓存中没有则获取并缓存
-        注意：此方法不处理在线音乐，在线音乐的时长获取在 music_url 中处理
+        先查标签缓存，未命中则读取本地文件时长并写回缓存。
 
         Args:
             name: 歌曲名称
+            playlist_name: 兼容旧调用点，本地播放不使用
 
         Returns:
             float: 歌曲时长（秒），失败返回 0
         """
-        # 检查歌曲是否存在
         if name not in self.all_music:
             self.log.warning(f"歌曲 {name} 不存在")
             return 0
 
-        # 电台直接返回 0
-        if self.is_web_radio_music(name):
-            self.log.info(f"电台 {name} 不会有播放时长")
-            return 0
-
-        # --- 优化后的网络音乐时长获取及持久化缓存 ---
-        if self.is_web_music(name):
-            try:
-                # 直接从字典里拿原始带 base64 的数据，防止被下层函数截胡
-                raw_url = None
-                if playlist_name:
-                    raw_url = self.playlist_music_urls.get(f"{playlist_name}::{name}")
-                if not raw_url:
-                    raw_url = self.all_music.get(name)
-
-                # 尝试计算缓存路径 (利用最原始的 URL)
-                cache_path = None
-                if getattr(self.config, "cache_max_size_mb", 0) > 0 and raw_url:
-                    cache_path = self._extract_cache_path_from_url(raw_url, name)
-
-                # 分支判断：检查物理缓存
-                # 如果物理文件在，直接测
-                if cache_path:
-                    cache_status = is_cache_valid(cache_path)
-
-                    if cache_status == -1:
-                        self.log.warning(
-                            f"获取时长时命中负向缓存(死链)，直接返回0: {name}"
-                        )
-                        return 0
-                    elif cache_status == 1:
-                        os.utime(cache_path, None)
-
-                        if name in self._web_music_duration_cache:
-                            self.log.debug(f"物理文件存在，命中内存时长: {name}")
-                            return self._web_music_duration_cache[name]
-
-                        duration = await get_local_music_duration(
-                            cache_path, self.config
-                        )
-                        self.log.info(
-                            f"命中物理缓存: {cache_path}, 测得时长: {duration}"
-                        )
-                        if duration > 0:
-                            self._web_music_duration_cache[name] = duration
-                        return duration
-
-                # 4. 如果走到这里，说明【没开启缓存】或者【文件不存在/预下载失败】
-                # 此时我们才需要真正去拿能够下载的最终 URL
-                url, origin_url = await self._get_web_music_url(name, playlist_name)
-
-                # 【情况 A】没开缓存功能，走兜底临时文件下载
-                if not cache_path:
-                    if name in self._web_music_duration_cache:
-                        return self._web_music_duration_cache[name]
-                    if get_web_music_duration is None:
-                        return 0
-                    duration, _ = await get_web_music_duration(url, self.config, None)
-                    if duration > 0:
-                        self._web_music_duration_cache[name] = duration
-                    return duration
-
-                # 【情况 B】开启了缓存，但物理文件缺失，强制下载并缓存
-                self.log.info(f"缓存文件缺失，强制触发重新下载: {name}")
-                if get_web_music_duration is None:
-                    return 0
-                duration, _ = await get_web_music_duration(url, self.config, cache_path)
-
-                # 下载完后后台清理与记账
-                if duration > 0:
-                    self._web_music_duration_cache[name] = duration
-                    cleanup_task = asyncio.create_task(
-                        asyncio.to_thread(
-                            clean_old_caches,
-                            self.config.cache_dir,
-                            getattr(self.config, "cache_max_size_mb", 0),
-                            self.config.cache_song_name,
-                        )
-                    )
-                    cleanup_task.add_done_callback(lambda t: t.exception())
-
-                return duration
-
-            except Exception as e:
-                self.log.exception(f"获取网络音乐 {name} 时长失败: {e}")
-                return 0
-
-        # 本地音乐：使用持久化缓存
         # 先检查缓存中是否有时长信息
         if name in self.all_music_tags:
             duration = self.all_music_tags[name].get("duration", 0)
@@ -974,7 +643,6 @@ class MusicLibrary:
                 self.log.debug(f"从缓存读取本地音乐 {name} 时长: {duration} 秒")
                 return duration
 
-        # 缓存中没有，需要获取时长
         duration = 0
         try:
             filename = self.all_music[name]
@@ -984,12 +652,10 @@ class MusicLibrary:
             else:
                 self.log.warning(f"本地音乐文件 {filename} 不存在")
 
-            # 获取到时长后，更新到缓存并持久化
             if duration > 0:
                 if name not in self.all_music_tags:
                     self.all_music_tags[name] = asdict(Metadata())
                 self.all_music_tags[name]["duration"] = duration
-                # 保存缓存
                 self.try_save_tag_cache()
                 self.log.info(f"已缓存本地音乐 {name} 时长: {duration} 秒")
 
@@ -997,6 +663,7 @@ class MusicLibrary:
             self.log.exception(f"获取本地音乐 {name} 时长失败: {e}")
 
         return duration
+
 
     def refresh_music_tag(self):
         """刷新音乐标签（给前端调用）"""
@@ -1015,7 +682,6 @@ class MusicLibrary:
         # TODO: 优化性能？
         # TODO 如何安全的清空 picture_cache_path
         self.all_music_tags = {}  # 需要清空内存残留
-        self.clear_web_music_duration_cache()  # 清空网络音乐时长缓存
         self.try_gen_all_music_tag()
         self.log.info("刷新：已启动重建 tag cache")
 
@@ -1096,9 +762,6 @@ class MusicLibrary:
         self.log.info(f"ignore_tag_absolute_dirs: {ignore_tag_absolute_dirs}")
 
         for name, file_or_url in only_items.items():
-            # 跳过网络音乐
-            if self.is_web_music(name):
-                continue
             start = time.perf_counter()
             if name not in all_music_tags:
                 try:
@@ -1153,206 +816,23 @@ class MusicLibrary:
         """
         return self.all_music
 
-    def get_web_music_api(self):
-        """获取网络音乐API配置
-
-        Returns:
-            dict: 网络音乐API配置字典
-        """
-        return self._web_music_api
-
-    def get_all_radio(self):
-        """获取所有电台
-
-        Returns:
-            dict: 所有电台字典
-        """
-        return self._all_radio
-
-    def clear_web_music_duration_cache(self):
-        """清空网络音乐时长缓存
-
-        清空内存中的网络音乐时长缓存，不影响本地音乐的缓存
-        """
-        self._web_music_duration_cache = {}
-        self.log.info("已清空网络音乐时长缓存")
 
     # ==================== URL处理方法 ====================
 
     # 接收 playlist_name
     async def get_music_url(self, name, playlist_name=None):
-        """获取音乐播放地址
+        """获取音乐播放地址（仅本地文件）
 
         Args:
             name: 歌曲名称
+            playlist_name: 兼容旧调用点，本地播放不使用
 
         Returns:
-            tuple: (播放地址, 原始地址) - 网络音乐时可能有原始地址
+            str: 播放地址，音乐不存在时返回空字符串
         """
         self.log.info(f"get_music_url name:{name}")
-        if self.is_web_music(name):
-            return await self._get_web_music_url(name, playlist_name)
-        return self._get_local_music_url(name), None
+        return self._get_local_music_url(name)
 
-    # 接收 playlist_name
-    async def _get_web_music_url(self, name, playlist_name=None):
-        """获取网络音乐播放地址
-
-        Args:
-            name: 歌曲名称
-
-        Returns:
-            tuple: (播放地址, 原始地址)
-        """
-        self.log.info("in _get_web_music_url")
-
-        # 优先从专属歌单字典拿，拿不到再走原来的大字典
-        url = None
-        if playlist_name:
-            url = self.playlist_music_urls.get(f"{playlist_name}::{name}")
-        if not url:
-            url = self.all_music.get(name)
-
-        self.log.info(f"get_music_url web music. name:{name}, url:{url}")
-
-        # --- 小爱音箱端缓存截胡逻辑 ---
-        if getattr(self.config, "cache_max_size_mb", 0) > 0:
-            cache_path = self._extract_cache_path_from_url(url, name)
-            if cache_path:
-                cache_status = is_cache_valid(cache_path)
-                if cache_status == -1:
-                    # 确诊死链，直接打回空链接，触发秒切
-                    self.log.warning(
-                        f"命中负向缓存(死链墓碑)，拒绝网络请求，直接跳过: {name}"
-                    )
-                    return "", None
-
-                if cache_status == 1:
-                    # 正常命中缓存
-                    os.utime(cache_path, None)  # 刷新保命时间
-                    local_url = self._get_file_url(cache_path)
-                    self.log.info(f"音箱端命中本地缓存，直链下发: {local_url}")
-                    return local_url, None
-        # --- 音箱截胡逻辑结束 ---
-
-        # 需要通过API获取真实播放地址
-        if self.is_need_use_play_music_api(name):
-            url = await self._get_url_from_api(name, url)
-            if not url:
-                return "", None
-
-        # 是否需要代理
-        # 对 bilibili 页面 URL，优先解析为真实音频/CDN URL；成功后再走 proxy，避免 /proxy 只拿到 HTML 页面。
-        is_bilibili_page = isinstance(url, str) and (
-            "bilibili.com/video/" in url or "b23.tv/" in url
-        )
-        resolved_origin_url = url
-        if is_bilibili_page:
-            try:
-                import asyncio
-
-                cmd = [
-                    "yt-dlp",
-                    "-f",
-                    "ba",
-                    "-g",
-                    "--no-playlist",
-                    "--user-agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                ]
-                if self.config.enable_yt_dlp_cookies:
-                    cmd += ["--cookies", f"{self.config.yt_dlp_cookies_path}"]
-                cmd += [url]
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await proc.communicate()
-                lines = [
-                    line.strip()
-                    for line in stdout.decode(errors="replace").splitlines()
-                    if line.strip()
-                ]
-                resolved = lines[0] if lines else ""
-                if proc.returncode == 0 and resolved:
-                    self.log.info(
-                        f"resolved bilibili page url via yt-dlp. name:{name}, page_url:{url}, resolved_url:{resolved}"
-                    )
-                    resolved_origin_url = resolved
-                else:
-                    self.log.warning(
-                        f"resolve bilibili page url via yt-dlp failed, code:{proc.returncode}, stderr:{stderr.decode(errors='replace')[:500]}, page_url:{url}"
-                    )
-                    resolved = await self.url_cache.get(url, {}, self.config)
-                    if resolved:
-                        self.log.info(
-                            f"resolved bilibili page url via api fallback. name:{name}, page_url:{url}, resolved_url:{resolved}"
-                        )
-                        resolved_origin_url = resolved
-                    else:
-                        self.log.warning(
-                            f"resolve bilibili page url failed, fallback to page url. name:{name}, page_url:{url}"
-                        )
-            except Exception as e:
-                self.log.exception(
-                    f"resolve bilibili page url exception. name:{name}, page_url:{url}, err:{e}"
-                )
-
-        if self.config.web_music_proxy or url.startswith("self://") or is_bilibili_page:
-            # 判断是否为电台，传入 radio 参数
-            is_radio = self.is_web_radio_music(name)
-            proxy_url = self._get_proxy_url(resolved_origin_url, is_radio=is_radio)
-            return proxy_url, resolved_origin_url
-
-        return resolved_origin_url, None
-
-    async def _get_url_from_api(self, name, url):
-        """通过API获取真实播放地址
-
-        Args:
-            name: 歌曲名称
-            url: 原始URL
-
-        Returns:
-            str: 真实播放地址，失败返回空字符串
-        """
-        headers = self._web_music_api[name].get("headers", {})
-        url = await self.url_cache.get(url, headers, self.config)
-        if not url:
-            self.log.error(f"_get_url_from_api use api fail. name:{name}, url:{url}")
-        return url
-
-    def _get_proxy_url(self, origin_url, is_radio=None):
-        """获取代理URL
-
-        使用短 token 替代完整 base64 URL，避免 URL 过长超出小爱音箱等设备固件的
-        HTTP 客户端 URL 长度限制（通常约 1024 字节），导致请求被截断返回 400。
-
-        Args:
-            origin_url: 原始URL
-            is_radio: 是否为电台直播流
-
-        Returns:
-            str: 代理URL
-        """
-        import secrets
-
-        try:
-            proxy_type = "radio" if is_radio else "music"
-            token = secrets.token_urlsafe(8)
-            set_proxy_token(token, origin_url, bool(is_radio))
-            proxy_url = f"{self.config.hostname}:{self.config.public_port}/proxy/{proxy_type}?token={token}"
-            self.log.info(f"Using token proxy url: {proxy_url}")
-            return proxy_url
-        except Exception as e:
-            # fallback: 兼容旧方式
-            self.log.warning(f"token proxy failed, fallback to urlb64: {e}")
-            urlb64 = base64.b64encode(origin_url.encode("utf-8")).decode("utf-8")
-            proxy_type = "radio" if is_radio else "music"
-            proxy_url = f"{self.config.hostname}:{self.config.public_port}/proxy/{proxy_type}?urlb64={urlb64}"
-            self.log.info(f"Using proxy url: {proxy_url}")
-            return proxy_url
 
     def _get_local_music_url(self, name):
         """获取本地音乐播放地址
@@ -1367,6 +847,8 @@ class MusicLibrary:
         self.log.info(
             f"_get_local_music_url local music. name:{name}, filename:{filename}"
         )
+        if not filename:
+            return ""
         return self._get_file_url(filename)
 
     def _get_file_url(self, filepath):
@@ -1394,33 +876,4 @@ class MusicLibrary:
         url = f"{self.config.hostname}:{self.config.public_port}/music/{encoded_name}"
         return try_add_access_control_param(self.config, url)
 
-    @staticmethod
-    async def get_play_url(proxy_url):
-        """获取播放URL
 
-        Args:
-            proxy_url: 代理URL
-
-        Returns:
-            str: 最终重定向的URL
-        """
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(proxy_url) as response:
-                # 获取最终重定向的 URL
-                return str(response.url)
-
-    def expand_self_url(self, origin_url):
-        parsed_url = urlparse(origin_url)
-        self.log.info(f"链接处理前 ${parsed_url}")
-        if parsed_url.scheme != "self":
-            return parsed_url, origin_url
-
-        url = f"{self.config.hostname}:{self.config.public_port}{parsed_url.path}"
-        if parsed_url.query:
-            url += f"?{parsed_url.query}"
-        if parsed_url.fragment:
-            url += f"#{parsed_url.fragment}"
-
-        return urlparse(url), url
