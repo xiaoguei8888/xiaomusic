@@ -1,5 +1,6 @@
 """媒体文件路由（本地音乐/封面/上传）"""
 
+import logging
 import os
 import shutil
 from typing import TYPE_CHECKING
@@ -20,14 +21,14 @@ from fastapi.responses import (
 
 from xiaomusic.api.dependencies import (
     access_key_verification,
-    config,
     get_xiaomusic,
-    log,
 )
 from xiaomusic.utils.file_utils import chmoddir
 
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
+
+log = logging.getLogger("xiaomusic")
 
 router = APIRouter()
 
@@ -41,7 +42,7 @@ async def upload_music(
     """上传音乐文件到当前播放列表对应的目录"""
     try:
         # 选择目标目录：优先尝试由播放列表中已有歌曲推断目录
-        dest_dir = config.music_path
+        dest_dir = xiaomusic.config.music_path
         # 如果播放列表中存在歌曲，从其中任意一首推断目录
         musics = xiaomusic.music_list.get(playlist, [])
         if musics and len(musics) > 0:
@@ -92,12 +93,18 @@ async def upload_music(
 
 
 @router.get("/music/{file_path:path}")
-async def music_file(request: Request, file_path: str, key: str = "", code: str = ""):
+async def music_file(
+    request: Request,
+    file_path: str,
+    key: str = "",
+    code: str = "",
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     """音乐文件访问（仅本地音乐目录）"""
-    if not access_key_verification(f"/music/{file_path}", key, code):
+    if not access_key_verification(f"/music/{file_path}", key, code, xiaomusic.config):
         raise HTTPException(status_code=404, detail="File not found")
 
-    absolute_path = os.path.abspath(config.music_path)
+    absolute_path = os.path.abspath(xiaomusic.config.music_path)
     absolute_file_path = os.path.normpath(os.path.join(absolute_path, file_path))
     if not absolute_file_path.startswith(absolute_path + os.sep):
         raise HTTPException(status_code=404, detail="File not found")
@@ -117,12 +124,20 @@ async def music_options():
 
 
 @router.get("/picture/{file_path:path}")
-async def get_picture(request: Request, file_path: str, key: str = "", code: str = ""):
+async def get_picture(
+    request: Request,
+    file_path: str,
+    key: str = "",
+    code: str = "",
+    xiaomusic: "XiaoMusic" = Depends(get_xiaomusic),
+):
     """图片文件访问"""
-    if not access_key_verification(f"/picture/{file_path}", key, code):
+    if not access_key_verification(
+        f"/picture/{file_path}", key, code, xiaomusic.config
+    ):
         raise HTTPException(status_code=404, detail="File not found")
 
-    absolute_path = os.path.abspath(config.picture_cache_path)
+    absolute_path = os.path.abspath(xiaomusic.config.picture_cache_path)
     absolute_file_path = os.path.normpath(os.path.join(absolute_path, file_path))
     if not absolute_file_path.startswith(absolute_path + os.sep):
         raise HTTPException(status_code=404, detail="File not found")

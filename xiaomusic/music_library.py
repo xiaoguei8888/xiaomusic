@@ -490,12 +490,14 @@ class MusicLibrary:
             return list_name
 
         # 模糊搜一个播放列表（只需要一个，不需要 extra index）
-        real_name = find_best_match(
+        matches = find_best_match(
             list_name,
             self.music_list,
             cutoff=self.config.fuzzy_match_cutoff,
             n=1,
-        )[0]
+        )
+        # 无候选匹配时 find_best_match 返回空列表，历史上这里直接 [0] 会 IndexError
+        real_name = matches[0] if matches else ""
 
         if real_name:
             self.log.info(f"根据【{list_name}】找到播放列表【{real_name}】")

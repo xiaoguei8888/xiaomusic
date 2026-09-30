@@ -1,6 +1,12 @@
-"""依赖注入和认证相关功能"""
+"""依赖注入和认证相关功能
+
+运行时状态只有 FastAPI 的 app.state（ADR-0002）；这里不再有模块级的伪全局
+（历史实现用延迟代理模拟 config / log / xiaomusic 三个全局对象）。
+需要配置与日志的函数一律从 request.app.state（或 scope 上的 app.state）显式取用。
+"""
 
 import hashlib
+import logging
 import secrets
 import time  # 用于生成 7 天免密 Cookie 的过期时间（exp）
 from typing import (
@@ -23,13 +29,13 @@ from fastapi.security import (
 from fastapi.staticfiles import StaticFiles
 
 if TYPE_CHECKING:
-    import logging
-
     from xiaomusic.config import Config
     from xiaomusic.xiaomusic import XiaoMusic
 
 # 关闭基础认证的自动抛错，让我们接管验证流程
 security = HTTPBasic(auto_error=False)
+
+_log = logging.getLogger("xiaomusic")
 
 
 def _app_state():
@@ -37,6 +43,22 @@ def _app_state():
     from xiaomusic.api.app import app
 
     return app.state
+
+
+def _state_config(state) -> "Config":
+    """从 app.state 取配置（唯一状态源），未初始化时报错。"""
+    config = getattr(state, "config", None)
+    if config is None:
+        raise RuntimeError("config not initialized. Call HttpInit() first.")
+    return config
+
+
+def _state_log(state) -> logging.Logger:
+    """从 app.state 取日志（唯一状态源），未初始化时报错。"""
+    log = getattr(state, "log", None)
+    if log is None:
+        raise RuntimeError("log not initialized. Call HttpInit() first.")
+    return log
 
 
 def initialize_state(xiaomusic_instance: "XiaoMusic") -> None:
@@ -60,47 +82,6 @@ def get_xiaomusic(request: Request) -> "XiaoMusic":
     return xiaomusic_instance
 
 
-class _LazyProxy:
-    """延迟代理类，用于模拟全局变量"""
-
-    def __init__(self, attr_name: str):
-        self._attr_name = attr_name
-
-    def __getattr__(self, name):
-        """代理所有属性访问"""
-        obj = getattr(_app_state(), self._attr_name, None)
-        if obj is None:
-            raise RuntimeError(
-                f"{self._attr_name} not initialized. Call initialize() first."
-            )
-        return getattr(obj, name)
-
-    def __call__(self, *args, **kwargs):
-        """代理函数调用"""
-        obj = getattr(_app_state(), self._attr_name, None)
-        if obj is None:
-            raise RuntimeError(
-                f"{self._attr_name} not initialized. Call initialize() first."
-            )
-        return obj(*args, **kwargs)
-
-    def __bool__(self):
-        """支持布尔判断"""
-        obj = getattr(_app_state(), self._attr_name, None)
-        return obj is not None and bool(obj)
-
-    def __repr__(self):
-        obj = getattr(_app_state(), self._attr_name, None)
-        return repr(obj) if obj is not None else f"<Uninitialized {self._attr_name}>"
-
-
-# 创建代理对象，可以像普通变量一样使用
-# 添加类型注解以支持 IDE 代码跳转和补全
-xiaomusic: "XiaoMusic" = _LazyProxy("xiaomusic")  # type: ignore
-config: "Config" = _LazyProxy("config")  # type: ignore
-log: "logging.Logger" = _LazyProxy("log")  # type: ignore
-
-
 # 增加了 request 和 response 参数以操作 Cookie，并将 credentials 设为 Optional
 def verification(
     request: Request,
@@ -108,6 +89,8 @@ def verification(
     credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
 ):
     """HTTP Basic 认证"""
+    config = _state_config(request.app.state)
+
     # ========================================================
     # 7天免密模块 开始 (API拦截层)
     # ========================================================
@@ -172,12 +155,14 @@ def no_verification():
     return True
 
 
-def access_key_verification(file_path: str, key: str, code: str) -> bool:
-    """访问密钥验证"""
+def access_key_verification(
+    file_path: str, key: str, code: str, config: "Config"
+) -> bool:
+    """访问密钥验证（config 由调用方通过 DI 注入）"""
     if config.disable_httpauth:
         return True
 
-    log.debug(f"访问限制接收端[{file_path}, {key}, {code}]")
+    _log.debug(f"访问限制接收端[{file_path}, {key}, {code}]")
     if key is not None:
         current_key_bytes = key.encode("utf8")
         correct_key_bytes = (
@@ -219,6 +204,7 @@ class AuthStaticFiles(StaticFiles):
         ):
             await super().__call__(scope, receive, send)
             return
+        config = _state_config(request.app.state)
         if not config.disable_httpauth:
             # ========================================================
             # 7天免密模块 开始 (网页静态文件拦截层)
@@ -271,7 +257,8 @@ class AuthStaticFiles(StaticFiles):
 
 def reset_http_server(app):
     """重置 HTTP 服务器配置"""
-    log.info(f"disable_httpauth:{config.disable_httpauth}")
+    config = _state_config(app.state)
+    _state_log(app.state).info(f"disable_httpauth:{config.disable_httpauth}")
     if config.disable_httpauth:
         app.dependency_overrides[verification] = no_verification
     else:

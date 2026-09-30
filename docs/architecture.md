@@ -7,30 +7,37 @@
 
 ```
 L4  api/         入站适配：routers/* · websocket · cli           只做协议转换
-L3  services     用例编排：xiaomusic.py(门面) · command_handler · conversation
-L2  domain       领域：device_player(单设备播放) · music_library(曲库/歌单/标签)
-L1  adapters     出站适配：auth/login_flow(小米云) · utils/music_utils(ffmpeg/mutagen)
-L0  core         内核：events(事件总线) · device_state(状态唯一源) · config · const
+L3  services/    用例编排：xiaomusic.py(门面) · command_targets(命令目标)
+                 command_handler · conversation
+L2  domain/      领域：device_player(单设备播放) · music_library(曲库/歌单/标签)
+L1  adapters/    出站适配：auth/login_flow(小米云) · utils/music_utils(ffmpeg/mutagen)
+L0  core/        内核：events(类型化事件) · state(状态唯一源) · errors · task_supervisor
+    bootstrap/   组装根：container(容器) · Module 协议 · Application
 ```
 
-依赖方向单向：`api → services → domain → adapters`，`core` 被所有层依赖。禁止反向 import。
+依赖方向单向：`api → services → domain → adapters`，`core` 与 `bootstrap` 被所有层依赖（core 自身不依赖任何业务模块）。
 
 ## 目录
 
 | 路径 | 职责 |
 |---|---|
 | `xiaomusic/cli.py` | 参数解析、日志、启动 uvicorn |
-| `xiaomusic/xiaomusic.py` | 门面：装配组件 + 命令目标方法 |
+| `xiaomusic/xiaomusic.py` | 门面：装配 + 生命周期 + 日志 + 跨模块编排（168 语句） |
+| `xiaomusic/services/command_targets.py` | 18 条命令的实现与单层转发（Mixin，被门面继承） |
+| `xiaomusic/core/events.py` | Event 基类 + 7 个 dataclass 事件 + EventBus（字符串/类型双轨兼容） |
+| `xiaomusic/core/state.py` | frozen PlayerSnapshot + DeviceStateStore + StateStore 注册表 |
+| `xiaomusic/core/task_supervisor.py` | 后台任务统一命名、取消、异常必记日志 |
+| `xiaomusic/core/errors.py` | 统一异常体系（CommandError/AuthError/DeviceError/PlaybackError） |
+| `xiaomusic/bootstrap/__init__.py` | Container（注册/解析/循环依赖检测）+ Module 协议 + Application |
 | `xiaomusic/api/app.py` | FastAPI 实例、lifespan、静态文件挂载 |
-| `xiaomusic/api/dependencies.py` | `app.state` 单一状态源、Basic/JWT 鉴权 |
+| `xiaomusic/api/dependencies.py` | `app.state` 单一状态源、Basic/JWT 鉴权（无伪全局） |
 | `xiaomusic/api/routers/*` | system / device / music / playlist / media / login |
 | `xiaomusic/api/websocket.py` | 播放状态推送（事件驱动，1s 兜底） |
 | `xiaomusic/command_handler.py` | 口令匹配 → `commands` 注册表 → 门面方法 |
-| `xiaomusic/conversation.py` | 轮询音箱对话，触发命令 |
+| `xiaomusic/conversation.py` | 轮询音箱对话（cookie 三件套 + 失败指数退避），触发命令 |
 | `xiaomusic/device_player.py` | 单设备播放控制、云端状态快照、定时器 |
-| `xiaomusic/music_library.py` | 曲库扫描、歌单、标签/封面缓存、模糊搜索 |
+| `xiaomusic/music_library.py` | 曲库扫描、歌单、标签/封面缓存（conf 派生）、模糊搜索 |
 | `xiaomusic/auth*.py` / `login_flow.py` | 小米登录、token 刷新、设备发现 |
-| `xiaomusic/events.py` / `device_state.py` | 事件总线 / 播放状态唯一可变源 |
 | `xiaomusic/utils/*` | file / music / text / system 工具 |
 
 ## 数据流
@@ -38,9 +45,9 @@ L0  core         内核：events(事件总线) · device_state(状态唯一源) 
 ```
 语音轮询 或 Web 请求
    → CommandHandler / router（只做解析与转发）
-   → XiaoMusic 门面 → DevicePlayer / MusicLibrary / AuthManager
-   → DeviceStateStore（唯一写状态处）→ EventBus.publish
-        → WebSocket 推送（只读快照）
+   → XiaoMusic 门面 → CommandTargets → DevicePlayer / MusicLibrary / AuthManager
+   → DeviceStateStore（唯一写状态处）→ EventBus.publish（类型化事件）
+        → WebSocket 推送（只读 frozen 快照）
         → ConfigManager 落盘
 ```
 
@@ -51,9 +58,17 @@ L0  core         内核：events(事件总线) · device_state(状态唯一源) 
 
 - **单 asyncio 事件循环**，无自定义线程；子进程仅 ffmpeg/ffprobe（`create_subprocess_exec`）。
 - 阻塞解析（mutagen）走 `asyncio.to_thread`。
-- 每设备定时器由 `XiaoMusicDevice` 统一持有，取消走 `cancel_all_timer`。
+- 后台任务统一由 `core/task_supervisor.TaskSupervisor` 持有：命名、集中取消、异常必记日志。
+- 对话轮询失败采用指数退避（2s→60s 封顶），日志按原因去重。
 
-## 模块替换
+## 模块注入与移除
 
-新增能力 = 新路由模块 + 在 `api/routers/__init__.py` 注册一行 + 在门面装配；
-移除能力 = 删除模块目录 + 删除注册行 + 删除门面引用（本轮即按此方式删掉 4 个能力）。
+`Container` + `Module` 协议让"能力"成为可增删的装配单元：
+
+```python
+app = Application()
+app.add(AuthModule()).add(PlaybackModule()).add(WebModule())   # 删掉一行 = 下线一个能力
+```
+
+`Module` 提供 `register(container)` / `routes()` / `start()` / `stop()` 四个钩子；
+`test/test_container.py` 锁定容器契约（单例、循环依赖、重复注册、删模块即删能力）。

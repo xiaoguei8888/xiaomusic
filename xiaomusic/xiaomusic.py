@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
+"""L3 services 门面：装配组件、生命周期与跨模块编排。
+
+命令目标方法与单层转发已下沉到 xiaomusic/services/command_targets.py
+（对齐 docs/architecture.md 的分层：门面只保留装配 + 编排），XiaoMusic
+通过继承复用；commands.COMMAND_NAMES 的 18 条命令仍是本类上可 callable 的属性。
+"""
+
 import asyncio
 import logging
 import os
-import re
 from logging.handlers import RotatingFileHandler
 
 from xiaomusic import __version__
@@ -10,25 +16,18 @@ from xiaomusic.auth import AuthManager
 from xiaomusic.command_handler import CommandHandler
 from xiaomusic.config import Config
 from xiaomusic.config_manager import ConfigManager
-from xiaomusic.const import (
-    PLAY_TYPE_ALL,
-    PLAY_TYPE_ONE,
-    PLAY_TYPE_RND,
-    PLAY_TYPE_SEQ,
-    PLAY_TYPE_SIN,
-)
 from xiaomusic.conversation import ConversationPoller
 from xiaomusic.device_manager import DeviceManager
 from xiaomusic.events import CONFIG_CHANGED, DEVICE_CONFIG_CHANGED, EventBus
 from xiaomusic.music_library import MusicLibrary
+from xiaomusic.services.command_targets import CommandTargets
 from xiaomusic.utils.system_utils import (
     deepcopy_data_no_sensitive_info,
     try_add_access_control_param,
 )
-from xiaomusic.utils.text_utils import chinese_to_number
 
 
-class XiaoMusic:
+class XiaoMusic(CommandTargets):
     def __init__(self, config: Config):
         self.config = config
 
@@ -162,6 +161,7 @@ class XiaoMusic:
         console_handler.setFormatter(formatter)
         self.log.addHandler(console_handler)
 
+    # ==================== 生命周期 ====================
     async def auto_refresh_token_task(self):
         while True:
             await asyncio.sleep(self.config.token_refresh_sec)
@@ -183,14 +183,48 @@ class XiaoMusic:
             self.do_check_cmd, self.reset_timer_when_answer
         )
 
+    # 重新初始化
+    async def reinit(self):
+        for handler in self.log.handlers:
+            handler.close()
+        self.setup_logger()
+        await self.auth_manager.init_all_data()
+        self.music_library.gen_all_music_list()
+        self.update_all_playlist()
+
+        debug_config = deepcopy_data_no_sensitive_info(self.config)
+        self.log.info(f"reinit success. data:{debug_config}")
+
+    # 保存配置并重新启动
+    async def saveconfig(self, data):
+        """保存配置并重新启动"""
+        # 更新配置
+        self.update_config_from_setting(data)
+        # 配置文件落地
+        self.save_cur_config()
+        # 重新初始化
+        await self.reinit()
+
+    def update_config_from_setting(self, data):
+        """从设置更新配置"""
+        # 委托给 config_manager 更新配置
+        self.config_manager.update_config(data)
+
+        # 重新初始化配置相关的属性
+        self.init_config()
+
+        debug_config = deepcopy_data_no_sensitive_info(self.config)
+        self.log.info(f"update_config_from_setting ok. data:{debug_config}")
+
+        joined_keywords = "/".join(self.config.key_match_order)
+        self.log.info(f"语音控制已启动, 用【{joined_keywords}】开头来控制")
+        self.log.debug(f"key_word_dict: {self.config.key_word_dict}")
+
+    # ==================== 命令入口 / 任务监管 ====================
     # 匹配命令
     async def do_check_cmd(self, did="", query="", ctrl_panel=True, **kwargs):
         """检查并执行命令（委托给 command_handler）"""
         return await self.command_handler.do_check_cmd(did, query, ctrl_panel, **kwargs)
-
-    # 重置计时器
-    async def reset_timer_when_answer(self, answer_length, did):
-        await self.device_manager.devices[did].reset_timer_when_answer(answer_length)
 
     def append_running_task(self, task):
         self.running_task.append(task)
@@ -213,310 +247,11 @@ class XiaoMusic:
             return True
         return False
 
-    async def check_replay(self, did):
-        return await self.device_manager.devices[did].check_replay()
-
     def did_exist(self, did):
         # device_manager.devices 登录后才填充，未登录时回退到配置文件里的设备
         return did in self.device_manager.devices or did in (self.config.devices or {})
 
-    # 播放一个 url
-    async def play_url(self, did="", arg1="", **kwargs):
-        self.log.info(f"手动推送链接：{arg1}")
-        url = arg1
-        return await self.device_manager.devices[did].group_player_play(url)
-
-    # 口令:单曲循环
-    async def set_play_type_one(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_ONE)
-
-    # 口令:全部循环
-    async def set_play_type_all(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_ALL)
-
-    # 口令:随机播放
-    async def set_play_type_rnd(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_RND)
-
-    # 口令:单曲播放
-    async def set_play_type_sin(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_SIN)
-
-    # 口令:顺序播放
-    async def set_play_type_seq(self, did="", **kwargs):
-        await self.set_play_type(did, PLAY_TYPE_SEQ)
-
-    async def set_play_type(self, did="", play_type=PLAY_TYPE_RND, dotts=True):
-        await self.device_manager.devices[did].set_play_type(play_type, dotts)
-
-    # 口令:刷新列表
-    async def gen_music_list(self, **kwargs):
-        self.music_library.gen_all_music_list()
-        self.update_all_playlist()
-        self.log.info("gen_music_list ok")
-
-    # 口令:删除歌曲
-    async def cmd_del_music(self, did="", arg1="", **kwargs):
-        if not self.config.enable_cmd_del_music:
-            await self.do_tts(did, "语音删除歌曲功能未开启")
-            return
-        self.log.info(f"cmd_del_music {arg1}")
-        name = arg1
-        if len(name) == 0:
-            name = self.playingmusic(did)
-        await self.del_music(name)
-
-    async def del_music(self, name):
-        filename = self.music_library.get_filename(name)
-        if filename == "":
-            self.log.info(f"${name} not exist")
-            return
-        try:
-            os.remove(filename)
-            self.log.info(f"del ${filename} success")
-        except OSError:
-            self.log.error(f"del ${filename} failed")
-        # 重新生成音乐列表
-        self.music_library.gen_all_music_list()
-        self.update_all_playlist()
-
-    def _find_real_music_list_name(self, list_name):
-        """模糊搜索播放列表名称（委托给 music_library）"""
-        return self.music_library.find_real_music_list_name(list_name)
-
-    # 口令:播放歌单
-    async def play_music_list(self, did="", arg1="", **kwargs):
-        parts = arg1.split("|")
-        list_name = parts[0]
-
-        music_name = ""
-        if len(parts) > 1:
-            music_name = parts[1]
-        return await self.do_play_music_list(did, list_name, music_name)
-
-    async def do_play_music_list(self, did, list_name, music_name=""):
-        # 查找并获取真实的音乐列表名称
-        list_name = self._find_real_music_list_name(list_name)
-        # 检查音乐列表是否存在，如果不存在则进行语音提示并返回
-        if list_name not in self.music_library.music_list:
-            await self.do_tts(did, f"播放列表{list_name}不存在")
-            return
-
-        # 调用设备播放音乐列表的方法
-        await self.device_manager.devices[did].play_music_list(list_name, music_name)
-
-    # 口令:播放列表第
-    async def play_music_list_index(self, did="", arg1="", **kwargs):
-        patternarg = r"^([零一二三四五六七八九十百千万亿]+)个(.*)"
-        # 匹配参数
-        matcharg = re.match(patternarg, arg1)
-        if not matcharg:
-            return await self.play_music_list(did, arg1)
-
-        chinese_index = matcharg.groups()[0]
-        list_name = matcharg.groups()[1]
-        list_name = self._find_real_music_list_name(list_name)
-        if list_name not in self.music_library.music_list:
-            await self.do_tts(did, f"播放列表{list_name}不存在")
-            return
-
-        index = chinese_to_number(chinese_index)
-        play_list = self.music_library.music_list[list_name]
-        if 0 <= index - 1 < len(play_list):
-            music_name = play_list[index - 1]
-            self.log.info(f"即将播放 ${arg1} 里的第 ${index} 个: ${music_name}")
-            await self.device_manager.devices[did].play_music_list(
-                list_name, music_name
-            )
-            return
-        await self.do_tts(did, f"播放列表{list_name}中找不到第${index}个")
-
-    # 口令:选择第几个
-    async def select_index(self, did="", arg1="", **kwargs):
-        patternarg = r"^第?([零一二三四五六七八九十百千万亿]+)[个首条集]$"
-        matcharg = re.match(patternarg, arg1)
-        if not matcharg:
-            return
-
-        chinese_index = matcharg.groups()[0]
-        index = chinese_to_number(chinese_index)
-
-        device = self.device_manager.devices.get(did)
-        if not device:
-            self.log.warning(f"设备 did:{did} 不存在")
-            return
-
-        await device.handle_selection(index)
-
-    # 口令:播放歌曲
-    async def play(self, did="", arg1="", **kwargs):
-        parts = arg1.split("|")
-        search_key = parts[0]
-        name = parts[1] if len(parts) > 1 else search_key
-        if not name:
-            name = search_key
-
-        # 语音播放会根据歌曲匹配更新当前播放列表
-        return await self.do_play(did, name, search_key)
-
-    # 网页面板搜索播放
-    async def do_play(self, did, name, search_key=""):
-        return await self.device_manager.devices[did].play(name, search_key)
-
-    # 口令:播放本地歌曲
-    async def playlocal(self, did="", arg1="", **kwargs):
-        return await self.device_manager.devices[did].playlocal(arg1)
-
-    # 口令:下一首
-    async def play_next(self, did="", **kwargs):
-        return await self.device_manager.devices[did].play_next()
-
-    # 口令:上一首
-    async def play_prev(self, did="", **kwargs):
-        return await self.device_manager.devices[did].play_prev()
-
-    # 口令:停止
-    async def stop(self, did="", arg1="", **kwargs):
-        return await self.device_manager.devices[did].stop(arg1=arg1)
-
-    # 口令:分钟后关机
-    async def stop_after_minute(self, did="", arg1=0, **kwargs):
-        try:
-            # 尝试阿拉伯数字转换中文数字
-            minute = int(arg1)
-        except (KeyError, ValueError):
-            # 如果阿拉伯数字转换失败，尝试中文数字
-            minute = chinese_to_number(str(arg1))
-        return await self.device_manager.devices[did].stop_after_minute(minute)
-
-    # 口令:加入收藏,收藏歌曲
-    async def add_to_favorites(self, did="", arg1="", **kwargs):
-        name = arg1 if arg1 else self.playingmusic(did)
-        self.log.info(f"add_to_favorites {name}")
-        if not name:
-            self.log.warning("当前没有在播放歌曲，添加歌曲到收藏列表失败")
-            return
-
-        self.music_library.play_list_add_music("收藏", [name])
-
-    # 口令:取消收藏
-    async def del_from_favorites(self, did="", arg1="", **kwargs):
-        name = arg1 if arg1 else self.playingmusic(did)
-        self.log.info(f"del_from_favorites {name}")
-        if not name:
-            self.log.warning("当前没有在播放歌曲，从收藏列表中移除失败")
-            return
-
-        self.music_library.play_list_del_music("收藏", [name])
-
-    # 更新每个设备的歌单
-    def update_all_playlist(self):
-        """更新每个设备的歌单"""
-        for device in self.device_manager.devices.values():
-            device.update_playlist()
-
-    # 获取音量
-    async def get_volume(self, did="", **kwargs):
-        return await self.device_manager.devices[did].get_volume()
-
-    # 获取完整播放状态
-    async def get_player_status(self, did="", **kwargs):
-        return await self.device_manager.devices[did].get_player_status()
-
-    # 设置音量
-    async def set_volume(self, did="", arg1=0, **kwargs):
-        if did not in self.device_manager.devices:
-            self.log.info(f"设备 did:{did} 不存在, 不能设置音量")
-            return
-        volume = int(arg1)
-        return await self.device_manager.devices[did].set_volume(volume)
-
-    # 获取当前的播放列表
-    def get_cur_play_list(self, did):
-        if did not in self.device_manager.devices:
-            return ""
-        return self.device_manager.devices[did].get_cur_play_list()
-
-    # 正在播放中的音乐
-    def playingmusic(self, did):
-        if did not in self.device_manager.devices:
-            return ""
-        cur_music = self.device_manager.devices[did].get_cur_music()
-        self.log.debug(f"playingmusic. cur_music:{cur_music}")
-        return cur_music
-
-    def get_offset_duration(self, did):
-        if did not in self.device_manager.devices:
-            return 0, 0
-        return self.device_manager.devices[did].get_offset_duration()
-
-    # 当前是否正在播放歌曲
-    def isplaying(self, did):
-        if did not in self.device_manager.devices:
-            return False
-        return self.device_manager.devices[did].isplaying()
-
-    # 播放状态（云端权威 + 本地意图兜底）
-    def get_display_state(self, did):
-        if did not in self.device_manager.devices:
-            return False, None
-        return self.device_manager.devices[did].get_display_state()
-
-    def start_cloud_polling(self, did):
-        if did in self.device_manager.devices:
-            self.device_manager.devices[did].start_cloud_polling()
-
-    def stop_cloud_polling(self, did):
-        if did in self.device_manager.devices:
-            self.device_manager.devices[did].stop_cloud_polling()
-
-    # 获取当前配置
-    def getconfig(self):
-        """获取当前配置（委托给 config_manager）"""
-        return self.config_manager.get_config()
-
-    # 保存配置并重新启动
-    async def saveconfig(self, data):
-        """保存配置并重新启动"""
-        # 更新配置
-        self.update_config_from_setting(data)
-        # 配置文件落地
-        self.save_cur_config()
-        # 重新初始化
-        await self.reinit()
-
-    # 把当前配置落地
-    def save_cur_config(self):
-        """把当前配置落地（委托给 config_manager）"""
-        self.config_manager.save_cur_config(self.device_manager.devices)
-
-    def update_config_from_setting(self, data):
-        """从设置更新配置"""
-        # 委托给 config_manager 更新配置
-        self.config_manager.update_config(data)
-
-        # 重新初始化配置相关的属性
-        self.init_config()
-
-        debug_config = deepcopy_data_no_sensitive_info(self.config)
-        self.log.info(f"update_config_from_setting ok. data:{debug_config}")
-
-        joined_keywords = "/".join(self.config.key_match_order)
-        self.log.info(f"语音控制已启动, 用【{joined_keywords}】开头来控制")
-        self.log.debug(f"key_word_dict: {self.config.key_word_dict}")
-
-    # 重新初始化
-    async def reinit(self):
-        for handler in self.log.handlers:
-            handler.close()
-        self.setup_logger()
-        await self.auth_manager.init_all_data()
-        self.music_library.gen_all_music_list()
-        self.update_all_playlist()
-
-        debug_config = deepcopy_data_no_sensitive_info(self.config)
-        self.log.info(f"reinit success. data:{debug_config}")
-
+    # ==================== 跨模块编排 ====================
     # 获取所有设备
     async def getalldevices(self, **kwargs):
         device_list = []
@@ -554,10 +289,6 @@ class XiaoMusic:
             "mediaplayer",
             data,
         )
-
-    # 此接口用于获取当前设备
-    def get_cur_did(self):
-        return self.auth_manager._cur_did
 
     async def do_tts(self, did, value):
         return await self.device_manager.devices[did].do_tts(value)

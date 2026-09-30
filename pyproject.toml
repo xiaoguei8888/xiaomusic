@@ -39,6 +39,9 @@ lint = [
 ]
 dev = [
     "commitizen>=3.27.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=1.0",
+    "pytest-cov>=6.0",
 ]
 [tool.ruff]
 lint.select = [
@@ -72,6 +75,19 @@ extend-immutable-calls = [
 lint = "ruff check . --exclude MiService"
 fmt = "ruff format . --exclude MiService"
 lintfmt = {composite = ["ruff check --fix . --exclude MiService", "ruff format . --exclude MiService"]}
+
+[tool.pytest.ini_options]
+# 测试全部离线：不访问小米云，不依赖真实 music/ 与 conf/ 目录内容
+testpaths = ["test"]
+# 直接用 `pytest`（而不是 `python -m pytest`）时也能 import xiaomusic
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "-ra",
+    "--cov=xiaomusic",
+    "--cov-report=term-missing",
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"

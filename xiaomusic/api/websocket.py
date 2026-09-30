@@ -15,7 +15,6 @@ from fastapi import (
 
 from xiaomusic.api.dependencies import (
     verification,
-    xiaomusic,
 )
 from xiaomusic.events import PLAYER_STATE_CHANGED
 
@@ -52,6 +51,12 @@ def generate_ws_token(
 @router.websocket("/ws/playingmusic")
 async def ws_playingmusic(websocket: WebSocket):
     """WebSocket 播放状态推送"""
+    # 运行时实例只从 app.state 取（ADR-0002），不再用模块级伪全局
+    xiaomusic = getattr(websocket.app.state, "xiaomusic", None)
+    if xiaomusic is None:
+        await websocket.close(code=1008, reason="Not initialized")
+        return
+
     token = websocket.query_params.get("token")
     if not token:
         await websocket.close(code=1008, reason="Missing token")

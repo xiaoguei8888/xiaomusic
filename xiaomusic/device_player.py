@@ -702,52 +702,85 @@ class XiaoMusicDevice:
             self.log.info(f"不会继续播放歌曲. isplaying:{self.is_playing}")
 
 
+    def _pick_index(self, index, direction, play_list_len):
+        """按播放模式算出候选下标；无候选返回 None。"""
+        if play_list_len == 1:
+            return index  # 当只有一首歌曲时保持当前索引不变
+        if direction == "next":
+            new_index = index + 1
+            if self.device.play_type == PLAY_TYPE_SEQ and new_index >= play_list_len:
+                self.log.info("顺序播放结束")
+                return None
+            if new_index >= play_list_len:
+                if self.device.play_type == PLAY_TYPE_RND:
+                    self.log.info("当前随机列表已播放一轮，触发重新洗牌！")
+                    self.update_playlist(force_reshuffle=True)
+                    # 洗完牌后，当前歌曲被强行置顶在了 0，下一首必定是 1
+                    return 1
+                return 0
+            return new_index
+        if direction == "prev":
+            new_index = index - 1
+            return play_list_len - 1 if new_index < 0 else new_index
+        self.log.error("无效的方向参数")
+        return None
+
     def get_music(self, direction="next"):
-        """获取下一首或上一首音乐"""
+        """获取下一首或上一首音乐。
+
+        历史上这里是"发现文件不存在就 pop 掉再递归"，但递归开头的
+        update_playlist() 会把 pop 掉的曲目重新加回歌单，导致文件缺失时
+        递归不收敛（RecursionError）。改为在本地副本上迭代扫描：
+        - 候选文件不存在则跳过并记录，不修改 self._play_list；
+        - 扫完一轮仍无可用曲目则返回空串，由调用方决定后续行为。
+        """
         self.update_playlist()
         play_list_len = len(self._play_list)
         if play_list_len == 0:
             self.log.warning("当前播放列表没有歌曲")
             return ""
+
         index = 0
         try:
             index = self._play_list.index(self.get_cur_music())
         except ValueError:
             pass
 
-        if play_list_len == 1:
-            new_index = index  # 当只有一首歌曲时保持当前索引不变
-        else:
-            if direction == "next":
-                new_index = index + 1
-                if (
-                    self.device.play_type == PLAY_TYPE_SEQ
-                    and new_index >= play_list_len
-                ):
-                    self.log.info("顺序播放结束")
-                    return ""
-                if new_index >= play_list_len:
-                    if self.device.play_type == PLAY_TYPE_RND:
-                        self.log.info("当前随机列表已播放一轮，触发重新洗牌！")
-                        self.update_playlist(force_reshuffle=True)
-                        # 洗完牌后，当前歌曲被强行置顶在了 0，下一首必定是 1
-                        new_index = 1
-                    else:
-                        new_index = 0
-            elif direction == "prev":
-                new_index = index - 1
-                if new_index < 0:
-                    new_index = play_list_len - 1
-            else:
-                self.log.error("无效的方向参数")
-                return ""
+        candidates = self._play_list[:]
+        skipped = set()
+        attempts = 0
+        while candidates and attempts <= len(candidates) + 1:
+            attempts += 1
+            new_index = self._pick_index(index, direction, len(candidates))
+            if new_index is None:
+                break
+            # 随机播放到底会触发洗牌（_pick_index 内部调用 update_playlist），
+            # 此时候选列表要与新的 self._play_list 同步，否则会取到洗牌前的旧下标。
+            # 注意：只做一次同步，且同步后重新计算下标；不能每轮无条件同步，
+            # 否则 pop 掉的缺失曲目会被 self._play_list 重新带回来（死循环）。
+            if self._play_list != candidates and not skipped:
+                candidates = self._play_list[:]
+                if not candidates:
+                    break
+                new_index = min(new_index, len(candidates) - 1)
+            name = candidates[new_index]
+            if self.xiaomusic.music_library.is_music_exist(name):
+                if skipped:
+                    self.log.info(f"跳过不存在的歌曲: {sorted(skipped)}")
+                return name
+            skipped.add(name)
+            self.log.info(f"skip not exist music: {name}")
+            candidates.pop(new_index)
+            if not candidates:
+                break
+            # 从被删位置继续按同方向找，保持"下一首"的语义
+            index = new_index - 1 if direction == "next" else 0
+            if index < 0:
+                index = len(candidates) - 1
 
-        name = self._play_list[new_index]
-        if not self.xiaomusic.music_library.is_music_exist(name):
-            self._play_list.pop(new_index)
-            self.log.info(f"pop not exist music: {name}")
-            return self.get_music(direction)
-        return name
+        if skipped:
+            self.log.warning(f"播放列表内没有可用歌曲，已跳过: {sorted(skipped)}")
+        return ""
 
     def get_next_music(self):
         """获取下一首音乐"""

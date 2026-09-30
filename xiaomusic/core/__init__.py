@@ -1,9 +1,16 @@
-"""事件系统模块（兼容层）。
+"""L0 内核：事件、状态、错误、任务监管。
 
-事件内核已迁移到 xiaomusic.core.events（L0）；本模块只做 re-export，
-保证历史 import 路径 xiaomusic.events 不变。
+被所有层依赖，自身不依赖任何业务模块（只依赖标准库）。
+旧的 xiaomusic.events / xiaomusic.device_state 仍然可用（re-export）。
 """
 
+from xiaomusic.core.errors import (
+    AuthError,
+    CommandError,
+    DeviceError,
+    PlaybackError,
+    XiaomiMusicError,
+)
 from xiaomusic.core.events import (
     AUTH_CHANGED,
     COMMAND_FAILED,
@@ -24,6 +31,8 @@ from xiaomusic.core.events import (
     TrackChanged,
     event_name,
 )
+from xiaomusic.core.state import DeviceLike, DeviceStateStore, PlayerSnapshot, StateStore
+from xiaomusic.core.task_supervisor import TaskSupervisor
 
 __all__ = [
     "AUTH_CHANGED",
@@ -35,13 +44,23 @@ __all__ = [
     "PLAYLIST_CHANGED",
     "TRACK_CHANGED",
     "AuthChanged",
+    "AuthError",
+    "CommandError",
     "CommandFailed",
     "ConfigChanged",
     "DeviceConfigChanged",
+    "DeviceError",
+    "DeviceLike",
+    "DeviceStateStore",
     "Event",
     "EventBus",
+    "PlaybackError",
     "PlaybackStateChanged",
+    "PlayerSnapshot",
     "PlaylistChanged",
+    "StateStore",
+    "TaskSupervisor",
     "TrackChanged",
+    "XiaomiMusicError",
     "event_name",
 ]

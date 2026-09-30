@@ -1,5 +1,6 @@
 """播放列表路由"""
 
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import (
@@ -9,7 +10,6 @@ from fastapi import (
 
 from xiaomusic.api.dependencies import (
     get_xiaomusic,
-    log,
     verification,
 )
 from xiaomusic.api.models import (
@@ -21,6 +21,8 @@ from xiaomusic.api.models import (
 
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
+
+log = logging.getLogger("xiaomusic")
 
 router = APIRouter(dependencies=[Depends(verification)])
 

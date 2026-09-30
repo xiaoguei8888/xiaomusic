@@ -1,6 +1,7 @@
 """系统管理路由"""
 
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -34,15 +35,15 @@ from xiaomusic import (
     __version__,
 )
 from xiaomusic.api.dependencies import (
-    config,
     get_xiaomusic,
-    log,
     verification,
 )
 from xiaomusic.utils.system_utils import deepcopy_data_no_sensitive_info
 
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
+
+log = logging.getLogger("xiaomusic")
 
 router = APIRouter(dependencies=[Depends(verification)])
 
@@ -158,9 +159,9 @@ async def modifiysetting(
 
 
 @router.get("/log")
-def download_log():
+def download_log(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """下载日志文件快照"""
-    file_path = config.log_file
+    file_path = xiaomusic.config.log_file
     if os.path.exists(file_path):
         # 创建一个临时文件来保存日志的快照
         temp_file = tempfile.NamedTemporaryFile(delete=False)

@@ -1,6 +1,7 @@
 """设备控制路由"""
 
 import asyncio
+import logging
 import urllib.parse
 from typing import TYPE_CHECKING
 
@@ -11,7 +12,6 @@ from fastapi import (
 
 from xiaomusic.api.dependencies import (
     get_xiaomusic,
-    log,
     verification,
 )
 from xiaomusic.api.models import (
@@ -22,6 +22,8 @@ from xiaomusic.api.models import (
 
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
+
+log = logging.getLogger("xiaomusic")
 
 router = APIRouter(dependencies=[Depends(verification)])
 

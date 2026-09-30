@@ -47,3 +47,32 @@ jobs:
       - name: Test Docker image for ${{ matrix.platform }}
         run: |
           docker run --rm xiaomusic:ci-${{ matrix.platform }} /app/.venv/bin/python3 /app/xiaomusic.py -h
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio pytest-cov
+          pip install ruff || echo "ruff 安装失败，后续跳过 lint"
+
+      - name: Ruff（不可用时跳过并说明）
+        run: |
+          if command -v ruff >/dev/null 2>&1; then
+            ruff check . --exclude MiService
+          else
+            echo "ruff 不可用，跳过 lint"
+          fi
+
+      - name: Pytest with coverage
+        run: python -m pytest -q --cov=xiaomusic --cov-report=term-missing
+
