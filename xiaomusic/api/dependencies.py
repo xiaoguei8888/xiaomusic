@@ -32,35 +32,32 @@ if TYPE_CHECKING:
 security = HTTPBasic(auto_error=False)
 
 
-class _AppStateProxy:
-    """应用状态代理类
+def _app_state():
+    """延迟获取 FastAPI app.state，避免与 app.py 的循环导入。"""
+    from xiaomusic.api.app import app
 
-    提供类似全局变量的访问方式，但实际上是动态获取的。
-    这样既保持了代码的简洁性，又避免了真正的全局变量。
-    """
-
-    def __init__(self):
-        self._xiaomusic: XiaoMusic | None = None
-        self._config: Config | None = None
-        self._log: logging.Logger | None = None
-
-    def initialize(self, xiaomusic_instance: "XiaoMusic"):
-        """初始化应用状态
-
-        Args:
-            xiaomusic_instance: XiaoMusic 实例
-        """
-        self._xiaomusic = xiaomusic_instance
-        self._config = xiaomusic_instance.config
-        self._log = xiaomusic_instance.log
-
-    def is_initialized(self) -> bool:
-        """检查是否已初始化"""
-        return self._xiaomusic is not None
+    return app.state
 
 
-# 创建内部状态管理器
-_state = _AppStateProxy()
+def initialize_state(xiaomusic_instance: "XiaoMusic") -> None:
+    """把运行时实例挂到 FastAPI app.state（运行期唯一状态源）。"""
+    state = _app_state()
+    state.xiaomusic = xiaomusic_instance
+    state.config = xiaomusic_instance.config
+    state.log = xiaomusic_instance.log
+
+
+def is_initialized() -> bool:
+    """检查运行时实例是否已就绪。"""
+    return getattr(_app_state(), "xiaomusic", None) is not None
+
+
+def get_xiaomusic(request: Request) -> "XiaoMusic":
+    """FastAPI 依赖：取当前 XiaoMusic 实例。"""
+    xiaomusic_instance = getattr(request.app.state, "xiaomusic", None)
+    if xiaomusic_instance is None:
+        raise RuntimeError("xiaomusic not initialized. Call HttpInit() first.")
+    return xiaomusic_instance
 
 
 class _LazyProxy:
@@ -71,7 +68,7 @@ class _LazyProxy:
 
     def __getattr__(self, name):
         """代理所有属性访问"""
-        obj = getattr(_state, self._attr_name)
+        obj = getattr(_app_state(), self._attr_name, None)
         if obj is None:
             raise RuntimeError(
                 f"{self._attr_name} not initialized. Call initialize() first."
@@ -80,7 +77,7 @@ class _LazyProxy:
 
     def __call__(self, *args, **kwargs):
         """代理函数调用"""
-        obj = getattr(_state, self._attr_name)
+        obj = getattr(_app_state(), self._attr_name, None)
         if obj is None:
             raise RuntimeError(
                 f"{self._attr_name} not initialized. Call initialize() first."
@@ -89,19 +86,19 @@ class _LazyProxy:
 
     def __bool__(self):
         """支持布尔判断"""
-        obj = getattr(_state, self._attr_name)
+        obj = getattr(_app_state(), self._attr_name, None)
         return obj is not None and bool(obj)
 
     def __repr__(self):
-        obj = getattr(_state, self._attr_name)
+        obj = getattr(_app_state(), self._attr_name, None)
         return repr(obj) if obj is not None else f"<Uninitialized {self._attr_name}>"
 
 
 # 创建代理对象，可以像普通变量一样使用
 # 添加类型注解以支持 IDE 代码跳转和补全
-xiaomusic: "XiaoMusic" = _LazyProxy("_xiaomusic")  # type: ignore
-config: "Config" = _LazyProxy("_config")  # type: ignore
-log: "logging.Logger" = _LazyProxy("_log")  # type: ignore
+xiaomusic: "XiaoMusic" = _LazyProxy("xiaomusic")  # type: ignore
+config: "Config" = _LazyProxy("config")  # type: ignore
+log: "logging.Logger" = _LazyProxy("log")  # type: ignore
 
 
 # 增加了 request 和 response 参数以操作 Cookie，并将 credentials 设为 Optional

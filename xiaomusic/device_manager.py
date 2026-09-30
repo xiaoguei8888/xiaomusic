@@ -138,7 +138,10 @@ class DeviceManager:
         Args:
             auth_manager: 认证管理器实例
         """
-        await auth_manager.try_update_device_id()
+        try:
+            await auth_manager.try_update_device_id()
+        except Exception as e:
+            self.log.warning(f"try_update_device_id 失败，用现有配置初始化设备: {e}")
         self._update_devices()
 
     def set_devices(self, devices: dict[str, XiaoMusicDevice]):

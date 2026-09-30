@@ -155,7 +155,7 @@ def main():
 
     try:
         filename = config.getsettingfile()
-        if not os.path.exists(filename):
+        if os.path.exists(filename):
             with open(filename, encoding="utf-8") as f:
                 data = json.loads(f.read())
                 config.update_config(data)

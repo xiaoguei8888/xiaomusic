@@ -17,6 +17,7 @@ from miservice import MiAccount, MiIOService, MiNAService
 
 from xiaomusic.config import Device
 from xiaomusic.const import COOKIE_TEMPLATE
+from xiaomusic.auth_state import AuthState, AuthTokenStore, STATUS_OK
 from xiaomusic.utils.system_utils import (
     get_random,
     parse_cookie_string,
@@ -25,6 +26,7 @@ from xiaomusic.utils.system_utils import (
 
 LOGIN_COOLDOWN_SEC = 30
 INIT_LOCK_TIMEOUT_SEC = 60
+TOKEN_REFRESH_INTERVAL_SEC = 12 * 3600
 
 
 class AuthManager:
@@ -47,9 +49,60 @@ class AuthManager:
         self.cookie_jar = None
 
         self._cur_did = None
-        self.device_id = get_random(16).upper()
+        self._state = AuthState(
+            os.path.join(self.config.conf_path, "auth.json"), self.log
+        )
+        self._state.load()
+        self.device_id = self._state.data.get("deviceId") or self._load_or_create_device_id()
+        self._state.data["deviceId"] = self.device_id
+        if self.config.account and not self._state.data.get("account"):
+            self._state.data["account"] = self.config.account
+            self._state.save()
+        self._flow = None
         self.mi_session = ClientSession()
         self.device_manager = device_manager
+
+    def _ensure_flow(self):
+        from .login_flow import LoginFlow
+
+        if self._flow is None:
+            self._flow = LoginFlow(
+                self._state,
+                self.config.account,
+                self.config.password,
+                self.mi_session,
+                self.log,
+            )
+        return self._flow
+
+    def _load_or_create_device_id(self) -> str:
+        for path in (
+            os.path.join(self.config.conf_path, "auth.json"),
+            os.path.join(self.config.conf_path, ".device_id"),
+        ):
+            try:
+                if not os.path.isfile(path):
+                    continue
+                if path.endswith(".device_id"):
+                    with open(path, encoding="utf-8") as f:
+                        dev = f.read().strip()
+                else:
+                    with open(path, encoding="utf-8") as f:
+                        dev = json.loads(f.read()).get("deviceId", "")
+                if dev:
+                    return dev
+            except Exception:
+                continue
+        dev = get_random(16).upper()
+        try:
+            with open(
+                os.path.join(self.config.conf_path, ".device_id"), "w", encoding="utf-8"
+            ) as f:
+                f.write(dev)
+            os.chmod(os.path.join(self.config.conf_path, ".device_id"), 0o600)
+        except Exception:
+            pass
+        return dev
 
     async def init_all_data(self, force_login=False):
         try:
@@ -59,6 +112,32 @@ class AuthManager:
             )
         except asyncio.TimeoutError:
             self.log.warning("init_all_data 超时，可能被其他调用持有锁")
+
+    async def apply_qr_login(self, pass_token: str, user_id: str):
+        self.log.info(f"[QR] 扫码登录成功，写入凭据 userId={user_id}")
+        self._state.set_pass_token(pass_token, user_id, device_id=self.device_id)
+        self._state.data.setdefault("sids", {}).pop("micoapi", None)
+        self._state.data["sids"].pop("xiaomiio", None)
+        self._state.save()
+        await self.init_all_data(force_login=True)
+
+    async def refresh_token(self):
+        if self.mina_service is None:
+            return
+        async with self._init_lock:
+            try:
+                flow = self._ensure_flow()
+                result = await flow.ensure_sid("micoapi")
+                if result != STATUS_OK:
+                    self.log.warning(f"[AUTH-REFRESH] micoapi 刷新失败: {result}")
+                    return
+                self._bind_services()
+                self._last_login_ok = True
+                self._last_login_time = time.time()
+                await self.device_manager.update_device_info(self)
+                self.log.info("[AUTH-REFRESH] token 刷新成功")
+            except Exception as e:
+                self.log.warning(f"[AUTH-REFRESH] token 刷新异常: {e}")
 
     async def _init_all_data_with_lock(self, force_login=False):
         async with self._init_lock:
@@ -87,29 +166,21 @@ class AuthManager:
             self.log.info("[AUTH] 需要登录，开始执行 login_miboy")
             login_ok = await self.login_miboy()
             if not login_ok:
-                self.log.warning("[AUTH] 登录失败，本次初始化中止")
-                return
+                self.log.warning(
+                    "[AUTH] 登录失败，降级：用配置中的设备初始化（播放走 URL 直推不依赖 micoapi）"
+                )
         else:
             self.log.info(
                 f"[AUTH] 无需登录 need_login:{is_need_login} can_login:{is_can_login}"
             )
         await self.device_manager.update_device_info(self)
-        cookie_jar = self.get_cookie()
-        if cookie_jar:
-            self.mi_session.cookie_jar.update_cookies(cookie_jar)
-            self.log.info("[AUTH] cookie 已更新到 session")
-        else:
-            self.log.warning("[AUTH] get_cookie 返回 None，cookie 未更新")
-        self.cookie_jar = self.mi_session.cookie_jar
 
     async def can_login(self):
         if self.config.account and self.config.password:
             return True
-        if self.get_cookie():
+        if self._state.data.get("passToken"):
             return True
-        if os.path.isfile(os.path.join(self.config.conf_path, "auth.json")):
-            return True
-        self.log.warning("没有账号密码 或 cookies 无法登陆")
+        self.log.warning("没有账号密码 且无已保存 passToken，无法登录")
         return False
 
     async def need_login(self):
@@ -159,136 +230,73 @@ class AuthManager:
         self.log.info(
             f"[AUTH-LOGIN] 开始登录, account={self.config.account or '(空/扫码登录)'}"
         )
+        if self._state.cooldown_active():
+            self.log.warning("[AUTH-LOGIN] 冷却中，跳过本次登录")
+            return self._services_ready()
+
+        flow = self._ensure_flow()
         try:
-            mi_account = MiAccount(
-                self.mi_session,
-                self.config.account,
-                self.config.password,
-                str(self.mi_token_home),
-            )
+            micoapi = await flow.ensure_sid("micoapi")
+            self.log.info(f"[AUTH-LOGIN] micoapi 状态: {micoapi}")
+            if micoapi == STATUS_OK:
+                self._consecutive_failures = 0
+                self._bind_services()
+                self.login_acount = self.config.account
+                self.login_password = self.config.password
+                self._last_login_ok = True
+                self._last_login_time = time.time()
+                self.log.info(f"[AUTH-LOGIN] 登录完成. account={self.login_acount}")
+                # xiaomiio 仅用于设备列表，后台异步获取，避免阻塞启动/播放
+                asyncio.create_task(self._login_xiaomiio_async())
+                return True
 
-            self.set_token(mi_account)
-            token_info = mi_account.token
-            self.log.info(
-                f"[AUTH-LOGIN] MiAccount 创建成功, "
-                f"token keys={list(token_info.keys()) if token_info else 'None'}, "
-                f"has_passToken={'passToken' in (token_info or {})}, "
-                f".mi.token存在={os.path.isfile(self.mi_token_home)}"
-            )
-
-            login_result = await mi_account.login("micoapi")
-            self.log.info(
-                f"[AUTH-LOGIN] mi_account.login('micoapi') 返回: {login_result}"
-            )
-
-            if not login_result:
-                self._consecutive_failures += 1
-                self.log.warning(
-                    f"[AUTH-LOGIN] login 返回 False "
-                    f"(连续失败次数: {self._consecutive_failures})"
-                )
-
-                refreshed = await self._try_fresh_session_and_relogin(mi_account)
-                if refreshed:
-                    self.log.info("[AUTH-LOGIN] 使用全新 session 重新登录后成功")
-                    return True
-                else:
-                    self.mina_service = None
-                    self.miio_service = None
-                    self._last_login_ok = False
-                    self._last_login_time = time.time()
-                    self.log.warning(
-                        "[AUTH-LOGIN] 最终登录失败，"
-                        "passToken 可能已过期或被吊销，"
-                        "建议重新扫码登录或检查网络"
-                    )
-                    return False
-
-            self._consecutive_failures = 0
-            self.mina_service = MiNAService(mi_account)
-            self.miio_service = MiIOService(mi_account)
-            self._patch_account(mi_account)
-            self.login_acount = self.config.account
-            self.login_password = self.config.password
-            self._last_login_ok = True
-            self._last_login_time = time.time()
-            self.log.info(f"[AUTH-LOGIN] 登录完成. account={self.login_acount}")
-            return True
-
-        except KeyError as e:
             self._consecutive_failures += 1
             self.mina_service = None
             self.miio_service = None
             self._last_login_ok = False
             self._last_login_time = time.time()
             self.log.warning(
-                f"[AUTH-LOGIN] KeyError(API响应格式错误): {e}，"
-                "建议使用Cookie登录或访问小米官网验证"
+                f"[AUTH-LOGIN] micoapi 未就绪 ({micoapi})，"
+                "可在设置页用短信验证码重新登录"
             )
             return False
         except Exception as e:
             self._consecutive_failures += 1
-            error_str = str(e)
-            is_70016 = "70016" in error_str or "登录验证失败" in error_str
             self.mina_service = None
             self.miio_service = None
             self._last_login_ok = False
             self._last_login_time = time.time()
-            if is_70016:
-                self.log.warning(
-                    f"[AUTH-LOGIN] 70016 错误(登录验证失败): {e}，"
-                    "passToken 在 micoapi 服务端可能已被吊销"
-                )
-            else:
-                self.log.warning(f"[AUTH-LOGIN] 异常: {e}")
+            self.log.warning(f"[AUTH-LOGIN] 异常: {e}")
             return False
 
-    async def _try_fresh_session_and_relogin(self, old_mi_account):
-        self.log.info("[AUTH-FRESH] 尝试使用全新 session 重新登录...")
+    def _services_ready(self) -> bool:
+        return self.mina_service is not None and self._last_login_ok
+
+    async def _login_xiaomiio_async(self):
         try:
-            old_session = self.mi_session
-            new_session = ClientSession()
-
-            new_account = MiAccount(
-                new_session,
-                self.config.account,
-                self.config.password,
-                str(self.mi_token_home),
-            )
-            self.set_token(new_account)
-
-            new_token = new_account.token
-            old_token = old_mi_account.token
-            self.log.info(
-                f"[AUTH-FRESH] 新 MiAccount token keys="
-                f"{list(new_token.keys()) if new_token else 'None'}, "
-                f"旧 token keys={list(old_token.keys()) if old_token else 'None'}"
-            )
-
-            result = await new_account.login("micoapi")
-            self.log.info(f"[AUTH-FRESH] 新 session login 结果: {result}")
-
-            if result:
-                self.log.info("[AUTH-FRESH] 替换为新 session 和 account")
-                await old_session.close()
-                self.mi_session = new_session
-                self.mina_service = MiNAService(new_account)
-                self.miio_service = MiIOService(new_account)
-                self._patch_account(new_account)
-                self.login_acount = self.config.account
-                self.login_password = self.config.password
-                self._last_login_ok = True
-                self._last_login_time = time.time()
-                self._consecutive_failures = 0
-                return True
-            else:
-                self.log.warning("[AUTH-FRESH] 新 session 也失败了，关闭新 session")
-                await new_session.close()
-                return False
-
+            flow = self._ensure_flow()
+            status = await flow.ensure_sid("xiaomiio")
+            self.log.info(f"[AUTH-LOGIN] xiaomiio 后台登录状态: {status}")
+            if status == STATUS_OK:
+                await self.device_manager.update_device_info(self)
         except Exception as e:
-            self.log.warning(f"[AUTH-FRESH] 过程异常: {e}")
-            return False
+            self.log.warning(f"[AUTH-LOGIN] xiaomiio 后台登录异常: {e}")
+
+    def _bind_services(self):
+        store = AuthTokenStore(self._state, self.log)
+        acct = MiAccount(
+            self.mi_session,
+            self.config.account,
+            self.config.password,
+            store,
+            otp_callback=self._flow.otp.wait_code if self._flow else None,
+        )
+        acct.token = self._state.to_miservice_token()
+        if not acct.token.get("deviceId"):
+            acct.token["deviceId"] = self.device_id
+        self.mina_service = MiNAService(acct)
+        self.miio_service = MiIOService(acct)
+        self._patch_account(acct)
 
     def _patch_account(self, mi_account):
         original_mi_request = mi_account.mi_request
@@ -300,39 +308,16 @@ class AuthManager:
             except Exception as exc:
                 if not relogin:
                     raise
-                error_msg = str(exc)
                 auth_manager.log.warning(
-                    f"[PATCH-mi_request] mi_request 失败: {error_msg}, "
-                    f"尝试从 auth.json 恢复 passToken 后重试..."
+                    f"[PATCH-mi_request] mi_request 失败: {exc}, "
+                    "清理 session 并重新加载 token 后重试"
                 )
-
                 mi_account.session.cookie_jar.clear()
-                auth_manager.log.info("[PATCH-mi_request] 已清理 session cookie jar")
-
-                auth_manager.set_token(mi_account)
-                if mi_account.token and "passToken" in mi_account.token:
-                    try:
-                        login_ok = await mi_account.login(sid)
-                        if login_ok:
-                            auth_manager.log.info(
-                                "[PATCH-mi_request] 恢复 passToken 后重新登录成功，重试原始请求"
-                            )
-                            return await original_mi_request(
-                                sid, url, data, headers, False
-                            )
-                        else:
-                            auth_manager.log.warning(
-                                "[PATCH-mi_request] 恢复 passToken 后 login 仍返回 False"
-                            )
-                    except Exception as e2:
-                        auth_manager.log.warning(
-                            f"[PATCH-mi_request] 恢复 passToken 后重新登录异常: {e2}"
-                        )
-                else:
-                    auth_manager.log.warning(
-                        "[PATCH-mi_request] auth.json 中无有效 passToken，无法恢复"
-                    )
-                raise
+                auth_manager._state.load()
+                mi_account.token = auth_manager._state.to_miservice_token()
+                if not mi_account.token.get("deviceId"):
+                    mi_account.token["deviceId"] = auth_manager.device_id
+                return await original_mi_request(sid, url, data, headers, relogin)
 
         mi_account.mi_request = patched_mi_request
 
@@ -364,89 +349,3 @@ class AuthManager:
             self.log.warning(f"[AUTH] try_update_device_id 失败: {e}")
             return {}
 
-    def set_token(self, account):
-        auth_path = os.path.join(self.config.conf_path, "auth.json")
-        if os.path.isfile(auth_path):
-            try:
-                with open(auth_path, encoding="utf-8") as f:
-                    user_data = json.loads(f.read())
-                    self.device_id = user_data["deviceId"]
-                    account.token = {
-                        "passToken": user_data["passToken"],
-                        "userId": user_data["userId"],
-                        "deviceId": self.device_id,
-                    }
-                    self.log.debug(
-                        f"[AUTH-set_token] 从 auth.json 加载 token, "
-                        f"userId={user_data.get('userId')}, "
-                        f"deviceId={self.device_id}"
-                    )
-            except Exception as e:
-                self.log.error(f"[AUTH-set_token] 读取 auth.json 失败: {e}")
-        elif self.config.cookie:
-            cookies_dict = parse_cookie_string_to_dict(self.config.cookie)
-            account.token = {
-                "passToken": cookies_dict["passToken"],
-                "userId": cookies_dict["userId"],
-                "deviceId": self.device_id,
-            }
-            self.log.debug("[AUTH-set_token] 从 cookie 配置加载 token")
-        else:
-            self.log.warning(
-                "[AUTH-set_token] 无 auth.json 且无 cookie 配置，无法设置 token"
-            )
-
-    def get_cookie(self):
-        if self.config.cookie:
-            cookie_jar = parse_cookie_string(self.config.cookie)
-            return cookie_jar
-
-        if not os.path.exists(self.mi_token_home):
-            self.log.warning(f"[AUTH-get_cookie] {self.mi_token_home} 不存在")
-            cookie_jar = self._get_cookie_from_session()
-            if cookie_jar:
-                return cookie_jar
-            return None
-
-        try:
-            with open(self.mi_token_home, encoding="utf-8") as f:
-                user_data = json.loads(f.read())
-            self.log.info("[AUTH-get_cookie] .mi.token 文件加载成功")
-            user_id = user_data.get("userId")
-            service_token = user_data.get("micoapi")[1]
-            device_id = self.config.get_one_device_id()
-            cookie_string = COOKIE_TEMPLATE.format(
-                device_id=device_id, service_token=service_token, user_id=user_id
-            )
-            return parse_cookie_string(cookie_string)
-        except Exception as e:
-            self.log.warning(f"[AUTH-get_cookie] 读取 .mi.token 失败: {e}")
-            cookie_jar = self._get_cookie_from_session()
-            if cookie_jar:
-                return cookie_jar
-            return None
-
-    def _get_cookie_from_session(self):
-        if self.mina_service is None:
-            return None
-        account = self.mina_service.account
-        if not account or not account.token:
-            return None
-        token = account.token
-        micoapi_data = token.get("micoapi")
-        if not micoapi_data or len(micoapi_data) < 2:
-            self.log.warning("[AUTH-get_cookie] 内存 token 中缺少 micoapi 数据")
-            return None
-        user_id = token.get("userId")
-        service_token = micoapi_data[1]
-        device_id = self.config.get_one_device_id()
-        if not user_id or not service_token:
-            self.log.warning(
-                "[AUTH-get_cookie] 内存 token 中缺少 userId 或 serviceToken"
-            )
-            return None
-        self.log.info("[AUTH-get_cookie] 从内存 token 降级获取 cookie")
-        cookie_string = COOKIE_TEMPLATE.format(
-            device_id=device_id, service_token=service_token, user_id=user_id
-        )
-        return parse_cookie_string(cookie_string)

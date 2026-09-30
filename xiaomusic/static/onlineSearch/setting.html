@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="./favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台配置</title>
+    <script src="./config.js"></script>
+    <link rel="preconnect" href="../default/materialicons.woff2" as="font" type="font/woff2" crossorigin>
+    <style>
+        /* ==================== Material Icons 字体定义 ==================== */
+        @font-face {
+            font-family: 'Material Icons';
+            font-style: normal;
+            font-weight: 400;
+            font-display: block;
+            src: url(../default/materialicons.woff2) format('woff2');
+        }
+
+        .material-icons {
+            font-family: 'Material Icons';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+            visibility: hidden;
+        }
+
+        .fonts-loaded .material-icons {
+            visibility: visible;
+        }
+
+        /* 全局样式 */
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: none;
+        }
+
+        /* 容器样式 */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+
+        /* 页面头部样式 */
+        .header {
+            background: #fff;
+            color: #333;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 24px;
+            color: #333;
+        }
+
+        .header p {
+            margin: 0 0 15px 0;
+            font-size: 14px;
+            color: #6c757d;
+        }
+
+        .version-info {
+            position: absolute;
+            top: 10px;
+            left: 20px;
+            color: #6c757d;
+            font-size: 14px;
+            background: rgba(0, 123, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            z-index: 10;
+        }
+
+        /* 顶部按钮样式 */
+        .header-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .header-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+
+        .header-btn:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+
+        .header-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* 高级设置模态框样式 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+            color: #333;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6c757d;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            color: #333;
+        }
+
+        .config-section {
+            margin-bottom: 20px;
+        }
+
+        .config-section-title {
+            font-weight: 600;
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .modal-body .config-card {
+            background: #f8f9fa;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .modal-body .config-card:last-child {
+            margin-bottom: 0;
+        }
+
+        .modal-body .config-card-title {
+            font-weight: 600;
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: none;
+        }
+
+        .config-row {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        .config-row:last-child {
+            border-bottom: none;
+        }
+
+        .config-label {
+            flex: 0 0 150px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .config-value {
+            flex: 1;
+        }
+
+        .config-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .config-input::placeholder {
+            color: #999;
+        }
+
+        .config-input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .config-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .modal-btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .modal-btn-primary:hover {
+            background-color: #0056b3;
+        }
+
+        .modal-btn-secondary {
+            background-color: #f8f9fa;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .modal-btn-secondary:hover {
+            background-color: #e9ecef;
+        }
+
+        /* 后台类型选择器样式 */
+        .backend-selector {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eee;
+        }
+
+        .backend-selector .section-title {
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        .backend-options {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .backend-option {
+            flex: 1;
+            min-width: 200px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: white;
+        }
+
+        .backend-option:hover {
+            border-color: #007bff;
+            background: #f0f7ff;
+        }
+
+        .backend-option.selected {
+            border-color: #007bff;
+            background: #e3f2fd;
+        }
+
+        .backend-option-title {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .backend-option-desc {
+            font-size: 13px;
+            color: #6c757d;
+        }
+
+        .backend-option .radio-circle {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ddd;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+            vertical-align: middle;
+            position: relative;
+        }
+
+        .backend-option.selected .radio-circle {
+            border-color: #007bff;
+        }
+
+        .backend-option.selected .radio-circle::after {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: #007bff;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* 插件设置区域样式 */
+        .plugins-section {
+            padding: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-top: 15px;
+            margin-bottom: 15px;
+            color: #333;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .border-bottom {
+            margin-top: 15px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+
+        .plugin-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .plugin-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            background: #f8f9fa;
+            transition: all 0.2s ease;
+        }
+
+        .plugin-item:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            background: #fff;
+        }
+
+        .plugin-info {
+            flex: 1;
+        }
+
+        .plugin-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .plugin-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .status-enabled {
+            background: #e3f2fd;
+            color: #007bff;
+        }
+
+        .status-disabled {
+            background: #ffebee;
+            color: #f44336;
+        }
+
+        .plugin-details {
+            font-size: 13px;
+            color: #6c757d;
+        }
+
+        .plugin-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 100px;
+            justify-content: center;
+        }
+
+        .enable-btn {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .enable-btn:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+
+        .disable-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .disable-btn:hover {
+            background-color: #c82333;
+            transform: translateY(-1px);
+        }
+
+        .uninstall-btn {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .uninstall-btn:hover {
+            background-color: #5a6268;
+            transform: translateY(-1px);
+        }
+
+        .edit-btn {
+            background-color: #17a2b8;
+            color: white;
+        }
+
+        .edit-btn:hover {
+            background-color: #138496;
+            transform: translateY(-1px);
+        }
+
+        .test-btn {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .test-btn:hover {
+            background-color: #218838;
+            transform: translateY(-1px);
+        }
+
+        .test-btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* LXServer 配置样式 */
+        .lxserver-section {
+            padding: 0;
+        }
+
+        .platforms-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .user-playlists {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .user-playlist-section {
+            background: #f8f9fa;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 12px 15px;
+        }
+
+        .playlist-category-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .playlist-info {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .user-list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .playlist-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: #fff;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            gap: 10px;
+        }
+
+        .playlist-item-info {
+            flex: 1;
+        }
+
+        .playlist-item-name {
+            font-weight: 500;
+            color: #333;
+            font-size: 13px;
+        }
+
+        .playlist-item-meta {
+            font-size: 12px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .playlist-item-source {
+            font-size: 11px;
+            padding: 2px 6px;
+            background: #e3f2fd;
+            color: #1976d2;
+            border-radius: 3px;
+        }
+
+        .expand-icon {
+            cursor: pointer;
+            font-size: 12px;
+            color: #666;
+            transition: transform 0.2s;
+            padding: 4px;
+        }
+
+        .playlist-item-wrapper {
+            margin-bottom: 0;
+        }
+
+        .playlist-songs {
+            margin-left: 34px;
+            padding: 8px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            margin-top: 4px;
+        }
+
+        .song-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 8px;
+            border-bottom: 1px solid #eee;
+            gap: 10px;
+        }
+
+        .song-item:last-child {
+            border-bottom: none;
+        }
+
+        .song-index {
+            font-size: 12px;
+            color: #999;
+            min-width: 20px;
+        }
+
+        .song-info {
+            flex: 1;
+        }
+
+        .song-title {
+            font-size: 13px;
+            color: #333;
+        }
+
+        .song-artist {
+            font-size: 11px;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .empty-songs {
+            font-size: 12px;
+            color: #999;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .sync-btn {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .sync-btn:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+
+        .convert-btn {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .convert-btn:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+
+        .delete-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .delete-btn:hover {
+            background-color: #c82333;
+            transform: translateY(-1px);
+        }
+
+        .delete-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .clear-btn {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .clear-btn:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+        }
+
+        .playlist-item input[type="checkbox"] {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .playlist-sync-status {
+            padding: 8px 12px;
+            background: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #2e7d32;
+        }
+
+        .empty-playlist {
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+            padding: 10px;
+        }
+
+        .platform-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 15px;
+            background: #f8f9fa;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            gap: 10px;
+        }
+
+        .platform-item input {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .platform-item .platform-key {
+            width: 80px;
+            font-weight: 600;
+        }
+
+        .platform-item .platform-name {
+            flex: 1;
+        }
+
+        .platform-item .delete-platform-btn {
+            padding: 6px 12px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .platform-item .delete-platform-btn:hover {
+            background-color: #c82333;
+        }
+
+        /* 状态消息样式 */
+        .loading, .error, .empty {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        .error {
+            color: #dc3545;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                max-width: 100%;
+                margin: 0;
+                border-radius: 0;
+                min-height: 100vh;
+            }
+
+            .header {
+                padding: 15px;
+            }
+
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .header p {
+                font-size: 13px;
+            }
+
+            .version-info {
+                position: static;
+                display: inline-block;
+                margin-bottom: 10px;
+            }
+
+            .header-buttons {
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 8px;
+                justify-content: center;
+            }
+
+            .header-btn {
+                padding: 8px 12px;
+                font-size: 13px;
+                flex: 0 0 auto;
+            }
+
+            .plugin-item {
+                flex-direction: column;
+                align-items: stretch;
+                padding: 12px;
+            }
+
+            .plugin-info {
+                margin-bottom: 10px;
+            }
+
+            .plugin-actions {
+                flex-direction: row;
+                justify-content: flex-end;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+
+            .action-btn {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header-buttons {
+                gap: 6px;
+            }
+
+            .header-btn {
+                flex: 1 1 calc(50% - 6px);
+                min-width: 100px;
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+
+            /* 平台列表移动端适配 */
+            .platforms-list {
+                gap: 8px;
+            }
+
+            .platform-item {
+                flex-direction: column;
+                align-items: stretch;
+                padding: 12px;
+                gap: 8px;
+            }
+
+            .platform-item .platform-key {
+                width: 100%;
+            }
+
+            .platform-item .platform-name {
+                width: 100%;
+            }
+
+            .platform-item .delete-platform-btn {
+                width: 100%;
+                padding: 8px;
+            }
+
+            /* 模态框移动端适配 */
+            .modal-content {
+                padding: 15px;
+                width: 95%;
+            }
+
+            .modal-header h2 {
+                font-size: 18px;
+            }
+
+            .config-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+                padding: 10px 0;
+            }
+
+            .config-label {
+                flex: none;
+                width: 100%;
+                font-size: 13px;
+            }
+
+            .config-value {
+                width: 100%;
+            }
+
+            .modal-footer {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .modal-btn {
+                width: 100%;
+                padding: 12px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                transition: none !important;
+                animation: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>后台配置</h1>
+        <div class="version-info">
+            <span id="versionSpan"></span>
+        </div>
+        <p>在线搜索后台配置</p>
+        <div class="header-buttons">
+            <a href="./index.html" class="header-btn">
+                <span class="material-icons">arrow_back</span>
+                <span>返回搜索</span>
+            </a>
+            <button class="header-btn" onclick="openAdvancedConfig()">
+                <span class="material-icons">settings</span>
+                <span>高级设置</span>
+            </button>
+            <button class="header-btn" id="plugin-upload-btn" onclick="uploadPlugins()">
+                <span class="material-icons">file_upload</span>
+                <span>手动上传</span>
+            </button>
+            <button class="header-btn" id="plugin-online-btn" style="display: none;" onclick="importOnlinePlugin()">
+                <span class="material-icons">cloud_download</span>
+                <span>在线导入</span>
+            </button>
+            <button class="header-btn" id="plugin-refresh-btn" onclick="loadPlugins()">
+                <span class="material-icons">refresh</span>
+                <span>刷新插件</span>
+            </button>
+            <a href="https://pd.qq.com/s/3tkfauiqe?b=9" target="_blank" class="header-btn" id="plugin-channel-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 32 32" style="display: block;">
+                    <g fill="none" fill-rule="evenodd">
+                        <path d="M15.9998867 0l-.3175962.00373031c-6.8340705.16105657-10.59798873 5.52198001-10.62328209 13.09956699l.00099159.2727027-.86256398 2.1053645c-.34339269.8459887-.59479858 1.4918602-.8236549 2.1249911-.16246446.4494579-.31092035.8862129-.4515632 1.3302912-1.41043336 4.4529342-1.46997142 7.7313526 1.14979123 8.0424546l.19586827.0182568c.69853306.0462522 1.18775172-.1357889 1.69345756-.5695745l.04666502-.0427837.10703497.1859114.16295747.2641667.09000756.1369219-.10203891.0725127c-1.18457469.8599516-1.78515849 2.0422997-.8749963 3.5478041.72014893 1.1919865 1.68579016 1.3851809 4.67654251 1.4059241h1.2781117l.7210113-.0101194c1.4578857-.0287327 2.9764342-.1065736 3.9343697-.2001215l.2555297.0243167c1.1291243.09698 2.8606159.1735357 4.3993902.1859242h1.2781118c2.9907546-.0207471 3.95642-.2139816 4.6768437-1.4064227l.0983227-.1723424c.764361-1.4241985.1648309-2.548721-.9747412-3.3755348l-.1034569-.072941.0912293-.1362605.1629318-.2641511.1068389-.1855884.0466679.0427821c.5516504.4732059 1.0836451.6468525 1.8890001.5513616 2.6200145-.3116105 2.5604594-3.5895097 1.1502083-8.0424822-.136678-.4315245-.2810058-.8567817-.4385987-1.2939849l-.1781698-.4846461c-.0923296-.2464665-.1903348-.5013359-.2976536-.7744519l-.3954267-.9868956-.8290275-2.020683.0009399-.279262c-.038761-7.60576089-3.8169423-12.93053326-10.6187985-13.09291824zm.0001023 2c6.339972.00032813 9.0947051 5.25726658 8.9334981 11.7557738l.8516442 2.0748544c.5606846 1.3708665.9939584 2.4718584 1.3860782 3.7098724 1.2134003 3.8314013.8203049 5.4169539.5209683 5.4525554-.6424867.0761796-2.5006035-2.8842697-2.5006035-2.8842697 0 1.7141775-.8994592 3.9510027-2.8457046 5.5664147l.3377045.1073023c1.0249215.341207 2.6653848 1.0302704 2.2154641 1.7750936-.4078113.675007-6.9962271.4309917-8.8982689.2207732l-.4753503.0452169c-2.33636.195172-8.04423656.3608021-8.42291849-.2659901-.50418989-.8339832 1.61195836-1.5976385 2.55205373-1.8820678-1.94652419-1.615412-2.84615056-3.852456-2.84615056-5.5667428l-.32111727.4924567c-.56063792.838483-1.70355568 2.4482423-2.17943051 2.391813-.29933663-.0355468-.69254342-1.6211541.52102408-5.4525554l.21887662-.6654718c.52220361-1.5311231 1.13363576-2.9515889 2.01884579-5.1193097-.17029299-6.39290578 2.5220086-11.75539097 8.93338651-11.7557191z" fill="currentColor" fill-rule="nonzero"/>
+                    </g>
+                </svg>
+                <span>MusicFree频道</span>
+            </a>
+            <a href="https://github.com/XCQ0607/lxserver" target="_blank" class="header-btn" id="lxserver-project-btn" style="display: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 18V5l12-2v13M6 15v8m6-8v8" />
+                </svg>
+                <span>LX Server项目</span>
+            </a>
+            <a href="https://github.com/boluofan/xiaomusic-online" target="_blank" class="header-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+            </a>
+            <a href="https://xdocs.hanxi.cc/issues/655.html" target="_blank" class="header-btn">
+                <span class="material-icons">help_outline</span>
+                <span>使用说明</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="plugins-section">
+        <!-- 后台类型选择 -->
+        <div class="backend-selector">
+            <div class="section-title">接口生态</div>
+            <div class="backend-options" id="backend-options">
+                <!-- 动态加载后台类型选项 -->
+            </div>
+        </div>
+
+        <!-- MusicFree插件配置区域 -->
+        <div id="plugin-config-area">
+            <div class="section-title">插件源配置</div>
+        <div id="plugin-source">
+            <div class="plugin-item">
+                <div class="plugin-info">
+                    <div class="plugin-details">
+                        <div><strong>插件源地址：</strong> <span id="source-url"></span></div>
+                    </div>
+                </div>
+                <div class="plugin-actions">
+                    <button class="action-btn enable-btn" id="refresh-source-btn" onclick="refreshPluginSource()">
+                        <span class="material-icons">refresh</span>
+                        <span>更新订阅</span>
+                    </button>
+                    <button class="action-btn edit-btn" id="edit-source-btn" onclick="editPluginSource()" style="display: inline-block;">
+                        <span class="material-icons">edit</span>
+                        <span>编辑</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="border-bottom"></div>
+        <div id="plugins-container">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+
+        <!-- LXServer配置区域 -->
+        <div class="lxserver-section" id="lxserver-config-area" style="display: none;">
+            <div class="section-title">
+                LXServer 接口配置
+                <a href="https://xcq0607.github.io/lxserver/api/reference.html" target="_blank" style="margin-left: 10px; font-size: 13px; color: #007bff;">API说明文档 ↗</a>
+            </div>
+            <div class="plugin-item">
+                <div class="plugin-info">
+                    <div class="plugin-details">
+                        <div><strong>LXServer 接口地址：</strong> <span id="lxserver-url"></span></div>
+                    </div>
+                </div>
+                <div class="plugin-actions">
+                    <button class="action-btn edit-btn" id="edit-lxserver-btn" onclick="editLxServerUrl()">
+                        <span class="material-icons">edit</span>
+                        <span>编辑</span>
+                    </button>
+                    <button class="action-btn test-btn" id="test-lxserver-btn" onclick="testLxServer()">
+                        <span class="material-icons">play_arrow</span>
+                        <span>接口测试</span>
+                    </button>
+                </div>
+            </div>
+            <div class="plugin-item" style="margin-top: 15px;">
+                <div class="plugin-info">
+                    <div class="plugin-details">
+                        <div><strong>认证信息</strong></div>
+                        <div style="margin-top: 8px;">
+                            <span style="color: #666; font-size: 13px;">x-user-name：</span><span id="lxserver-username"></span>
+                        </div>
+                        <div style="margin-top: 4px;">
+                            <span style="color: #666; font-size: 13px;">x-user-token：</span><span id="lxserver-token"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="plugin-actions">
+                    <button class="action-btn edit-btn" id="edit-lxserver-auth-btn" onclick="editLxServerAuth()">
+                        <span class="material-icons">edit</span>
+                        <span>编辑</span>
+                    </button>
+                </div>
+            </div>
+            <div class="section-title" style="margin-top: 20px;">平台配置</div>
+            <div class="plugin-actions" style="margin-top: 10px; margin-bottom: 15px">
+                <button class="action-btn enable-btn" onclick="addPlatform()">
+                    <span class="material-icons">add</span>
+                    <span>添加平台</span>
+                </button>
+            </div>
+            <div id="platforms-list" class="platforms-list"></div>
+            <div id="lx-playlist-section">
+                <div class="section-title" style="margin-top: 20px;">LX歌单</div>
+                <div class="header-buttons" style="margin-bottom: 15px;">
+                <button class="action-btn sync-btn" id="sync-playlist-btn" onclick="fetchLxPlaylist()">
+                    <span class="material-icons">cloud_download</span>
+                    <span>拉取LX歌单</span>
+                </button>
+                <button class="action-btn convert-btn" id="convert-playlist-btn" onclick="convertToXiaomusic()">
+                    <span class="material-icons">transform</span>
+                    <span>转换为XM歌单</span>
+                </button>
+                <button class="action-btn clear-btn" id="clear-xiaomusic-btn" onclick="clearXiaomusicPlaylists()">
+                    <span class="material-icons">clear_all</span>
+                    <span>清空已转歌单</span>
+                </button>
+                <button class="action-btn delete-btn" id="delete-playlist-btn" onclick="deleteSelectedPlaylists()" disabled>
+                    <span class="material-icons">delete</span>
+                    <span>删除选中</span>
+                </button>
+            </div>
+            <div id="playlist-sync-status" class="playlist-sync-status" style="margin-bottom: 15px; display: none;">
+                <span id="sync-status-text"></span>
+            </div>
+            <div id="user-playlists" class="user-playlists">
+                <div class="user-playlist-section">
+                    <div class="playlist-category-title">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="love-list-checkbox" value="loveList">
+                            <span class="expand-icon" onclick="toggleLoveListExpand(event)">▶</span>
+                            <span style="margin-left: 8px;">我喜欢的音乐</span>
+                        </label>
+                    </div>
+                    <div id="love-list-info" class="playlist-info">加载中...</div>
+                    <div id="love-list-songs" class="playlist-songs" style="display: none;"></div>
+                </div>
+                <div class="user-playlist-section">
+                    <div class="playlist-category-title">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="default-list-checkbox" value="defaultList">
+                            <span class="expand-icon" onclick="toggleDefaultListExpand(event)">▶</span>
+                            <span style="margin-left: 8px;">默认歌单</span>
+                        </label>
+                    </div>
+                    <div id="default-list-info" class="playlist-info">加载中...</div>
+                    <div id="default-list-songs" class="playlist-songs" style="display: none;"></div>
+                </div>
+                <div class="user-playlist-section">
+                    <div class="playlist-category-title" style="display: flex; align-items: center; gap: 10px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="select-all-playlists">
+                            <span style="margin-left: 8px;">自定义歌单</span>
+                        </label>
+                    </div>
+                    <div id="user-list-container" class="user-list-container">加载中...</div>
+                </div>
+            </div>
+            <div id="playlist-sync-status" class="playlist-sync-status" style="margin-top: 10px; display: none;">
+                <span id="sync-status-text"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- LXServer 认证信息模态框 -->
+<div class="modal-overlay" id="lxserverAuthModal">
+    <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-header">
+            <h2>编辑认证信息</h2>
+            <button class="modal-close" onclick="closeLxServerAuthModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="config-row" style="border-bottom: none;">
+                <div class="config-label">x-user-name</div>
+                <div class="config-value">
+                    <input type="text" class="config-input" id="lxserver-username-input" placeholder="请输入x-user-name" style="background-color: #f8f9fa;">
+                </div>
+            </div>
+            <div class="config-row" style="border-bottom: none;">
+                <div class="config-label">x-user-token</div>
+                <div class="config-value">
+                    <div style="position: relative; display: inline-flex; align-items: center; width: 100%;">
+                        <input type="password" class="config-input" id="lxserver-token-input" placeholder="请输入x-user-token" style="background-color: #f8f9fa; padding-right: 35px;">
+                        <span class="material-icons toggle-password" onclick="toggleTokenVisibility()" id="token-toggle-icon" style="position: absolute; right: 10px; cursor: pointer; font-size: 20px; color: #666;">visibility_off</span>
+                    </div>
+                    <span style="color: #999; font-size: 12px; margin-top: 4px; display: inline-block;">请从 LXServer 处获取认证信息</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn modal-btn-secondary" onclick="closeLxServerAuthModal()">取消</button>
+            <button class="modal-btn modal-btn-primary" onclick="confirmLxServerAuth()">确定</button>
+        </div>
+    </div>
+</div>
+
+<!-- LXServer URL 输入模态框 -->
+<div class="modal-overlay" id="lxserverUrlModal">
+    <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-header">
+            <h2>修改LXServer 接口地址</h2>
+            <button class="modal-close" onclick="closeLxServerUrlModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="config-row" style="border-bottom: none;">
+                <div class="config-label">新地址</div>
+                <div class="config-value">
+                    <input type="text" class="config-input" id="lxserver-url-input" placeholder="http://127.0.0.1:9527/api" style="background-color: #f8f9fa;">
+                    <span style="color: #999; font-size: 12px; margin-top: 4px; display: inline-block;">输入示例: http://127.0.0.1:9527/api</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn modal-btn-secondary" onclick="closeLxServerUrlModal()">取消</button>
+            <button class="modal-btn modal-btn-primary" onclick="confirmLxServerUrl()">确定</button>
+        </div>
+    </div>
+</div>
+
+<!-- 高级设置模态框 -->
+<div class="modal-overlay" id="advancedConfigModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>高级设置</h2>
+            <button class="modal-close" onclick="closeAdvancedConfig()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="config-card">
+                <div class="config-card-title">播放设置</div>
+                <div class="config-row">
+                    <div class="config-label">自动追加歌曲</div>
+                    <div class="config-value">
+                        <input type="checkbox" class="config-checkbox" id="autoAddSongCheckbox">
+                        <span style="margin-left: 8px; color: #6c757d; font-size: 13px;">小爱播放完最后一首时自动添加同歌手歌曲</span>
+                    </div>
+                </div>
+                <div class="config-row" id="autoConvertRow" style="display: none;">
+                    <div class="config-label">自动拉取并转换</div>
+                    <div class="config-value">
+                        <input type="checkbox" class="config-checkbox" id="autoConvertCheckbox">
+                        <span style="margin-left: 8px; color: #6c757d; font-size: 13px;">每30秒自动拉取LX歌单并转为XM歌单</span>
+                    </div>
+                </div>
+            </div>
+            <div class="config-card">
+                <div class="config-card-title">
+                    AI 大模型配置
+                    <span style="font-weight: normal; font-size: 12px; color: #999; margin-left: 8px;">用于AI提取用户口令关键字</span>
+                </div>
+                <div class="config-row">
+                    <div class="config-label">启用 AI 提取</div>
+                    <div class="config-value">
+                        <input type="checkbox" class="config-checkbox" id="aiApiEnabledCheckbox">
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-label">接口地址</div>
+                    <div class="config-value">
+                        <input type="text" class="config-input" id="aiBaseUrlInput" placeholder="符合OpenAI API 规范的大模型接口">
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px;">
+                            <span style="color: #999; font-size: 12px;">留空则使用阿里百炼接口地址。</span>
+                            <a href="https://bailian.console.aliyun.com/cn-beijing?spm=5176.12818093_47.overview_recent.1.7d4316d0so6Vx4&tab=api#/api" target="_blank" style="font-size: 13px; color: #007bff;">阿里百炼官方 ↗</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-label">API Key</div>
+                    <div class="config-value">
+                        <input type="text" class="config-input" id="aiApiKeyInput" placeholder="请输入 API Key">
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-label">模型名称</div>
+                    <div class="config-value">
+                        <input type="text" class="config-input" id="aiModelInput" placeholder="非必填，默认为：qwen-flash">
+                    </div>
+                </div>
+            </div>
+            <div class="config-card" id="boxPlayPlatformCard" style="display: none;">
+                <div class="config-card-title">偏好设置</div>
+                <div class="config-row">
+                    <div class="config-label">口令搜索偏好</div>
+                    <div class="config-value">
+                        <span style="color: #999; font-size: 12px; margin-top: 4px; display: inline-block;">
+                          口令搜索时的偏好平台，默认聚合搜索是搜索所有
+                        </span>
+                        <select class="config-input" id="boxPlayPlatformSelect">
+                            <option value="all">聚合搜索</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn modal-btn-secondary" onclick="closeAdvancedConfig()">取消</button>
+            <button class="modal-btn modal-btn-primary" onclick="saveAdvancedConfig()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 加载独立的 JS 文件 -->
+<script src="./setting-backend.js"></script>
+<script src="./setting-musicfree.js"></script>
+<script src="./setting-lxserver.js"></script>
+<script>
+    /*============================通用函数=================================*/
+    document.addEventListener('DOMContentLoaded', async function() {
+        await checkPasswordRequired();
+        const passwordModal = document.getElementById('passwordModal');
+        if (passwordModal.classList.contains('show')) {
+            return;
+        }
+        await initPageData();
+    });
+
+    async function checkPasswordRequired() {
+        try {
+            const response = await fetch('/api/password/check');
+            const data = await response.json();
+            if (data.success && data.data.required) {
+                const isVerified = sessionStorage.getItem('setting_verified');
+                if (isVerified !== 'true') {
+                    showPasswordModal();
+                }
+            }
+        } catch (error) {
+            console.error('检查密码配置失败:', error);
+        }
+    }
+
+    async function initPageData() {
+        if (window.appConfig && window.appConfig.version) {
+            const versionSpan = document.getElementById('versionSpan');
+            if (versionSpan) {
+                versionSpan.textContent = `v${window.appConfig.version}`;
+            }
+        }
+        window.currentBackendType = 1;
+        await loadBackConfInfo();
+        if (window.currentBackendType === 1) {
+            await loadPlugins();
+            await loadPluginSource();
+        } else {
+            await loadLxServerConfig();
+            await fetchLxPlaylist();
+        }
+        document.fonts.ready.then(function() {
+            document.body.classList.add('fonts-loaded');
+        });
+    }
+
+    function showPasswordModal() {
+        const modal = document.getElementById('passwordModal');
+        modal.classList.add('show');
+    }
+
+    function hidePasswordModal() {
+        const modal = document.getElementById('passwordModal');
+        modal.classList.remove('show');
+    }
+
+    async function verifyPassword() {
+        const passwordInput = document.getElementById('password-input');
+        const password = passwordInput.value;
+
+        if (!password) {
+            alert('请输入密码');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/password/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: password })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                sessionStorage.setItem('setting_verified', 'true');
+                hidePasswordModal();
+                passwordInput.value = '';
+                await initPageData();
+            } else {
+                alert(data.error || '密码错误');
+                returnToIndex();
+            }
+        } catch (error) {
+            alert('验证失败：' + error.message);
+        }
+    }
+
+    function handlePasswordKeyPress(event) {
+        if (event.key === 'Enter') {
+            verifyPassword();
+        }
+    }
+
+    function returnToIndex() {
+        window.location.href = './index.html';
+    }
+</script>
+<!-- 密码验证模态框 -->
+<div class="modal-overlay" id="passwordModal">
+    <div class="modal-content" style="max-width: 350px; text-align: center;">
+        <div class="modal-header">
+            <h2>请输入密码</h2>
+        </div>
+        <div class="modal-body" style="padding: 20px 0;">
+            <input type="password" id="password-input" class="config-input"
+                   placeholder="请输入访问密码"
+                   style="width: 100%; padding: 12px; font-size: 16px;"
+                   onkeypress="handlePasswordKeyPress(event)">
+            <p style="text-align: left; color: #999; font-size: 13px; margin-top: 25px;">1. 忘记密码，请在`conf/plugins-config.json`下重置！</p>
+            <p style="text-align: left; color: #999; font-size: 13px; margin-top: 10px;">2. 置空密码则关闭密码锁！</p>
+        </div>
+        <div class="modal-footer" style="justify-content: center;">
+            <button class="modal-btn modal-btn-secondary" onclick="returnToIndex()">返回</button>
+            <button class="modal-btn modal-btn-primary" onclick="verifyPassword()">验证</button>
+        </div>
+    </div>
+</div>
+</body>
+</html>

@@ -17,6 +17,7 @@ from xiaomusic.api.dependencies import (
     verification,
     xiaomusic,
 )
+from xiaomusic.events import PLAYER_STATE_CHANGED
 
 router = APIRouter()
 
@@ -56,6 +57,8 @@ async def ws_playingmusic(websocket: WebSocket):
         await websocket.close(code=1008, reason="Missing token")
         return
 
+    did = ""
+    on_player_state = None
     try:
         # 解码 JWT（自动校验签名 + 是否过期）
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -67,10 +70,22 @@ async def ws_playingmusic(websocket: WebSocket):
             return
 
         await websocket.accept()
+        if did:
+            xiaomusic.start_cloud_polling(did)
 
-        # 开始推送状态
+        target_did = did
+        wakeup = asyncio.Event()
+
+        def on_player_state(did="", **kwargs):
+            if did and did != target_did:
+                return
+            wakeup.set()
+
+        xiaomusic.event_bus.subscribe(PLAYER_STATE_CHANGED, on_player_state)
+
+        # 开始推送状态（只读服务端快照，不在循环里请求云端）
         while True:
-            is_playing = xiaomusic.isplaying(did)
+            is_playing, snap = xiaomusic.get_display_state(did)
             cur_music = xiaomusic.playingmusic(did)
             cur_playlist = xiaomusic.get_cur_play_list(did)
             offset, duration = xiaomusic.get_offset_duration(did)
@@ -84,10 +99,18 @@ async def ws_playingmusic(websocket: WebSocket):
                         "cur_playlist": cur_playlist,
                         "offset": offset,
                         "duration": duration,
+                        "status": snap.get("status") if snap else None,
+                        "loop_type": snap.get("loop_type") if snap else None,
+                        "volume": snap.get("volume") if snap else None,
+                        "source": "cloud" if snap else "local",
                     }
                 )
             )
-            await asyncio.sleep(1)
+            try:
+                await asyncio.wait_for(wakeup.wait(), timeout=1)
+            except asyncio.TimeoutError:
+                pass
+            wakeup.clear()
 
     except jwt.ExpiredSignatureError:
         await websocket.close(code=1008, reason="Token expired")
@@ -98,3 +121,8 @@ async def ws_playingmusic(websocket: WebSocket):
     except Exception as e:
         print(f"Error: {e}")
         await websocket.close()
+    finally:
+        if on_player_state is not None:
+            xiaomusic.event_bus.unsubscribe(PLAYER_STATE_CHANGED, on_player_state)
+        if did:
+            xiaomusic.stop_cloud_polling(did)

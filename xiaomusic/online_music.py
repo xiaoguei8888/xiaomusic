@@ -1,0 +1,1693 @@
+"""在线音乐服务模块
+
+负责MusicFree插件集成、在线音乐搜索和播放链接获取。
+"""
+
+import asyncio
+import base64
+import ipaddress
+import json
+import socket
+import uuid
+from urllib.parse import urljoin, urlparse
+
+import aiohttp
+
+from xiaomusic.const import PLAY_TYPE_ALL
+
+LX_QUALITY_PRIORITY = ["master", "flac24bit", "flac", "320k", "192k", "128k"]
+
+
+def _build_keyword(song_name, artist):
+    """
+    根据歌名和艺术家构建关键词
+
+    Args:
+        song_name: 歌名
+        artist: 艺术家
+
+    Returns:
+        str: 构建后的关键词
+    """
+    if song_name and artist:
+        return f"{song_name}-{artist}"
+    elif song_name:
+        return song_name
+    elif artist:
+        return artist
+    return ""
+
+
+def _parse_keyword_by_dash(keyword):
+    if "-" in keyword:
+        parts = keyword.split("-", 1)  # 只分割第一个 `-`
+        return parts[0].strip(), parts[1].strip()
+    return keyword, ""
+
+
+class OnlineMusicService:
+    """在线音乐服务
+
+    负责处理在线音乐搜索、插件调用和播放链接获取。
+    """
+
+    def __init__(self, log, js_plugin_manager, xiaomusic_instance=None):
+        """初始化在线音乐服务
+
+        Args:
+            log: 日志对象
+            js_plugin_manager: JS插件管理器
+        """
+        self.log = log
+        self.js_plugin_manager = js_plugin_manager
+        self.xiaomusic = xiaomusic_instance
+        self._singer_add_page = 1
+
+    async def get_music_list_online(
+        self, plugin="all", keyword="", page=1, limit=20, api_type=None, **kwargs
+    ):
+        """在线获取歌曲列表
+
+        Args:
+            plugin: 插件名称、对于LX Server接口，这个是平台类型
+            keyword: 搜索关键词
+            page: 页码
+            limit: 每页数量
+            **kwargs: 其他参数
+
+        Returns:
+            dict: 搜索结果
+        """
+        self.log.info("在线获取歌曲列表!")
+        if not self.js_plugin_manager:
+            return {"success": False, "error": "JS Plugin Manager not available"}
+
+        # 解析关键词和艺术家
+        keyword, artist = await self._parse_keyword_and_artist(keyword)
+
+        # 获取API配置信息
+        # 根据前端传入的 api_type 判断，1为MF插件，2为LX接口。如果没有传则用老办法兜底
+        if api_type is not None:
+            is_lx_server = int(api_type) == 2
+        else:
+            is_lx_server = self.js_plugin_manager.is_lx_server()
+
+        if is_lx_server:
+            # LX Server在线搜索
+            return await self._execute_lx_server_search(
+                plugin, keyword, artist, page, limit
+            )
+        else:
+            # 插件在线搜索
+            return await self._execute_plugin_search(
+                plugin, keyword, artist, page, limit
+            )
+
+    async def get_playlist_online(
+        self, plugin="all", keyword="", page=1, limit=20, api_type=None, **kwargs
+    ):
+        """在线获取歌单列表
+
+        Args:
+            plugin: 平台类型 (对于 LX Server 对应 source)
+            keyword: 搜索关键词
+            page: 页码
+            limit: 每页数量
+            api_type: 1=MusicFree, 2=LXServer
+            **kwargs: 其他参数
+
+        Returns:
+            dict: 搜索结果
+        """
+        self.log.info(f"在线搜索歌单: {keyword}")
+        if not self.js_plugin_manager:
+            return {"success": False, "error": "JS Plugin Manager not available"}
+
+        # 判断接口类型，默认逻辑与搜索歌曲一致
+        if api_type is not None:
+            is_lx_server = int(api_type) == 2
+        else:
+            is_lx_server = self.js_plugin_manager.is_lx_server()
+
+        if is_lx_server:
+            # 执行 LX Server 歌单搜索
+            return await self._execute_lx_server_playlist_search(
+                plugin, keyword, page, limit
+            )
+        else:
+            # 执行 MusicFree 插件歌单搜索
+            return await self._execute_plugin_playlist_search(
+                plugin, keyword, page, limit
+            )
+
+    async def get_playlist_detail_online(self, id, plugin, api_type, **kwargs):
+        """在线获取歌单详情"""
+        self.log.info(f"在线获取歌单详情 ID: {id}, Source: {plugin}")
+        if not self.js_plugin_manager:
+            return {"success": False, "error": "JS Plugin Manager not available"}
+
+        # api_type，歌单接口
+        if int(api_type) == 2:
+            return await self._execute_lx_server_playlist_detail(plugin, id)
+        else:
+            return await self._execute_plugin_playlist_detail(plugin, id)
+
+    async def _parse_keyword_and_artist(self, keyword):
+        """解析关键词和艺术家"""
+        parsed_keyword, parsed_artist = await self._parse_keyword_with_ai(keyword)
+        keyword = parsed_keyword or keyword
+        artist = parsed_artist or ""
+        return keyword, artist
+
+    # ---------------------------- LX Server 相关函数 ----------------------------
+
+    async def _execute_lx_server_search(self, plugin, keyword, artist, page, limit):
+        """执行LX Server搜索"""
+        lx_server_info = self.js_plugin_manager.get_lx_server_info()
+        if lx_server_info.get("base_url", "") != "":
+            if plugin == "all":
+                # 搜索所有启用的插件
+                return await self._search_all_platform_lx(
+                    lx_server_info, keyword, artist, page, limit
+                )
+            else:
+                # LX Server接口获取
+                result_data = await self.js_plugin_manager.lx_server_search(
+                    url=lx_server_info.get("base_url") + "/music/search",
+                    keyword=keyword,
+                    artist=artist,
+                    page=page,
+                    limit=limit,
+                    source=plugin,
+                    lx_server_info=lx_server_info,
+                )
+        else:
+            return {"success": False, "error": "LX Server接口未配置！"}
+
+        result_data["artist"] = artist or "佚名"
+        return result_data
+
+    async def _execute_lx_server_playlist_search(self, plugin, keyword, page, limit):
+        """执行 LX Server 歌单搜索具体业务"""
+        lx_server_info = self.js_plugin_manager.get_lx_server_info()
+        if lx_server_info.get("base_url", "") != "":
+            # 调用执行层的核心请求方法
+            return await self.js_plugin_manager.lx_server_playlist_search(
+                url=lx_server_info.get("base_url") + "/music/songList/search",
+                keyword=keyword,
+                source=plugin if plugin != "all" else "tx",  # 默认取tx
+                page=page,
+                limit=limit,
+                lx_server_info=lx_server_info,
+            )
+        else:
+            return {"success": False, "error": "LX Server 接口未配置！"}
+
+    async def _execute_lx_server_playlist_detail(self, plugin, id):
+        """执行 LX Server 歌单详情具体业务"""
+        lx_server_info = self.js_plugin_manager.get_lx_server_info()
+        if lx_server_info.get("base_url", "") != "":
+            return await self.js_plugin_manager.lx_server_playlist_detail(
+                url=lx_server_info.get("base_url") + "/music/songList/detail",
+                id=id,
+                source=plugin,
+                lx_server_info=lx_server_info,
+            )
+        else:
+            return {"success": False, "error": "LX Server 接口未配置！"}
+
+    async def _execute_lx_server_music_url(self, song_info, quality=None):
+        """执行LX Server获取音乐播放直链"""
+        lx_server_info = self.js_plugin_manager.get_lx_server_info()
+        base_url = lx_server_info.get("base_url", "")
+        if base_url == "":
+            return {"success": False, "error": "LX Server接口未配置！"}
+
+        preferred_quality = self._get_lx_server_music_quality(song_info, quality)
+        quality = self._get_lx_server_best_quality(song_info, preferred_quality)
+        return await self._resolve_lx_server_music_url(
+            lx_server_info=lx_server_info,
+            base_url=base_url,
+            song_info=song_info,
+            quality=quality,
+            preferred_quality=preferred_quality,
+            allow_auto_switch=True,
+            is_retry=False,
+        )
+
+    async def _resolve_lx_server_music_url(
+        self,
+        lx_server_info,
+        base_url,
+        song_info,
+        quality,
+        preferred_quality,
+        allow_auto_switch=True,
+        is_retry=False,
+    ):
+        """解析 LX Server 播放链接：失败降级，最后尝试换源。"""
+        result_data = await self._fetch_lx_server_music_url_once(
+            lx_server_info=lx_server_info,
+            base_url=base_url,
+            song_info=song_info,
+            quality=quality,
+            exact_quality=is_retry,
+        )
+        if result_data.get("url") and not result_data.get("errorMsg"):
+            return result_data
+
+        error_msg = self._get_lx_server_result_error(result_data)
+        if not self._is_lx_platform_not_supported_error(error_msg):
+            next_quality = self._get_lx_server_next_lower_quality(quality, song_info)
+            if next_quality:
+                self.log.info(
+                    "LX Server解析失败，尝试降低音质: "
+                    f"{self._get_lx_quality_display_name(quality)} -> "
+                    f"{self._get_lx_quality_display_name(next_quality)}"
+                )
+                return await self._resolve_lx_server_music_url(
+                    lx_server_info=lx_server_info,
+                    base_url=base_url,
+                    song_info=song_info,
+                    quality=next_quality,
+                    preferred_quality=preferred_quality,
+                    allow_auto_switch=allow_auto_switch,
+                    is_retry=True,
+                )
+
+        if allow_auto_switch:
+            song_name = self._get_lx_song_name(song_info)
+            self.log.info(f"LX Server原始源解析失败，准备自动尝试换源: {song_name}")
+            matched_song = await self._find_lx_server_other_source_match(
+                lx_server_info=lx_server_info,
+                base_url=base_url,
+                song_info=song_info,
+            )
+            if matched_song:
+                matched_quality = self._get_lx_server_best_quality(
+                    matched_song, preferred_quality
+                )
+                self.log.info(
+                    "LX Server找到备选源，尝试播放: "
+                    f"{self._get_lx_song_source(matched_song)} "
+                    f"({matched_quality})"
+                )
+                return await self._fetch_lx_server_music_url_once(
+                    lx_server_info=lx_server_info,
+                    base_url=base_url,
+                    song_info=matched_song,
+                    quality=matched_quality,
+                    exact_quality=True,
+                )
+
+        return result_data
+
+    async def _fetch_lx_server_music_url_once(
+        self,
+        lx_server_info,
+        base_url,
+        song_info,
+        quality,
+        exact_quality=False,
+    ):
+        """执行一次 LX Server 直链解析请求。"""
+        cache_result = await self.js_plugin_manager.lx_server_music_cache_check(
+            url=base_url + "/music/cache/check",
+            song_info=song_info,
+            quality=quality,
+            exact_quality=exact_quality,
+            lx_server_info=lx_server_info,
+        )
+        cache_hit = (
+            cache_result.get("exists")
+            and cache_result.get("url")
+            and not cache_result.get("isCollision")
+        )
+        self._log_lx_server_cache_check(song_info, quality, cache_result, cache_hit)
+        if cache_hit:
+            cache_result = dict(cache_result)
+            cache_result["url"] = self._normalize_lx_server_url(
+                base_url, cache_result["url"]
+            )
+            return cache_result
+
+        req_id = uuid.uuid4().hex
+        progress_task = asyncio.create_task(
+            self.js_plugin_manager.lx_server_music_progress(
+                url=base_url + "/music/progress",
+                req_id=req_id,
+                lx_server_info=lx_server_info,
+            )
+        )
+
+        try:
+            # 先让 SSE 连接注册到 LX Server，再用同一个 reqId 请求解析直链。
+            await asyncio.sleep(0.05)
+            result_data = await self.js_plugin_manager.lx_server_music_url(
+                url=base_url + "/music/url",
+                song_info=song_info,
+                quality=quality,
+                req_id=req_id,
+                lx_server_info=lx_server_info,
+            )
+            if not result_data.get("url"):
+                return result_data
+
+            return result_data
+        finally:
+            if not progress_task.done():
+                progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+
+    def _get_lx_server_music_quality(self, song_info, quality=None):
+        """获取 LX Server 播放直链请求音质，保持旧逻辑默认 320k。"""
+        if quality and quality != "standard":
+            return quality
+        if not isinstance(song_info, dict):
+            return "320k"
+        return song_info.get("quality") or song_info.get("type") or "320k"
+
+    def _get_lx_server_best_quality(self, song_info, user_preference="320k"):
+        """选择歌曲实际可用音质。"""
+        if not song_info:
+            return "128k"
+
+        available_qualities = self._get_lx_server_available_qualities(song_info)
+        if not available_qualities:
+            self.log.warning("LX Server歌曲无音质信息，使用默认 128k")
+            return "128k"
+
+        start_index = (
+            LX_QUALITY_PRIORITY.index(user_preference)
+            if user_preference in LX_QUALITY_PRIORITY
+            else -1
+        )
+        if start_index == -1:
+            self.log.warning(f"LX Server无效的音质偏好: {user_preference}")
+            return available_qualities[0] or "128k"
+
+        for quality in LX_QUALITY_PRIORITY[start_index:]:
+            if quality in available_qualities:
+                self.log.info(f"LX Server选择音质: {quality} (偏好: {user_preference})")
+                return quality
+
+        self.log.warning(
+            f"LX Server无匹配音质，使用第一个可用: {available_qualities[0]}"
+        )
+        return available_qualities[0] or "128k"
+
+    def _get_lx_server_next_lower_quality(self, current_quality, song_info):
+        """获取下一级可用音质。"""
+        if current_quality not in LX_QUALITY_PRIORITY:
+            return None
+
+        available_qualities = self._get_lx_server_available_qualities(song_info)
+        start_index = LX_QUALITY_PRIORITY.index(current_quality) + 1
+        for quality in LX_QUALITY_PRIORITY[start_index:]:
+            if not available_qualities or quality in available_qualities:
+                return quality
+        return None
+
+    def _get_lx_server_available_qualities(self, song_info):
+        """读取歌曲可用音质。"""
+        if not isinstance(song_info, dict):
+            return ["128k"]
+
+        meta = song_info.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+        types = (
+            song_info.get("types")
+            or song_info.get("_types")
+            or song_info.get("qualitys")
+            or song_info.get("_qualitys")
+            or meta.get("qualitys")
+            or meta.get("_qualitys")
+            or meta.get("types")
+            or meta.get("_types")
+            or {}
+        )
+
+        if isinstance(types, list):
+            available = []
+            for item in types:
+                quality = item.get("type") if isinstance(item, dict) else item
+                if quality:
+                    available.append(quality)
+            return available
+        if isinstance(types, dict):
+            return [quality for quality, enabled in types.items() if enabled]
+        return []
+
+    def _get_lx_quality_display_name(self, quality):
+        names = {
+            "master": "Master",
+            "flac24bit": "Hi-Res",
+            "flac": "SQ 无损",
+            "320k": "HQ 高品质",
+            "192k": "标准",
+            "128k": "标准",
+        }
+        return names.get(quality, str(quality).upper())
+
+    def _get_lx_server_result_error(self, result_data):
+        if not isinstance(result_data, dict):
+            return str(result_data)
+        return (
+            result_data.get("errorMsg")
+            or result_data.get("error")
+            or result_data.get("message")
+            or "服务器未返回播放链接"
+        )
+
+    def _is_lx_platform_not_supported_error(self, error_msg):
+        return bool(
+            error_msg and ("未找到支持" in error_msg or "not supported" in error_msg)
+        )
+
+    async def _find_lx_server_other_source_match(
+        self,
+        lx_server_info,
+        base_url,
+        song_info,
+    ):
+        """跨平台寻找同歌。"""
+        name = self._get_lx_song_name(song_info)
+        singer = self._get_lx_song_singer(song_info)
+        if not name or not singer:
+            return None
+
+        query = f"{name} {singer}"
+        original_source = self._get_lx_song_source(song_info)
+        search_sources = self._get_lx_server_auto_switch_sources(
+            lx_server_info, original_source
+        )
+        if not search_sources:
+            self.log.info("LX Server自动换源未配置可用平台")
+            return None
+        search_tasks = [
+            self.js_plugin_manager.lx_server_search(
+                url=base_url + "/music/search",
+                keyword=query,
+                artist="",
+                page=1,
+                limit=20,
+                source=source,
+                lx_server_info=lx_server_info,
+            )
+            for source in search_sources
+        ]
+        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+        for result in search_results:
+            if isinstance(result, Exception):
+                self.log.warning(f"LX Server自动换源搜索失败: {result}")
+                continue
+            if not isinstance(result, dict):
+                continue
+            for item in result.get("data", []):
+                candidate = self._normalize_lx_search_candidate(item)
+                if self._is_lx_same_song_match(song_info, candidate):
+                    duration_diff = abs(
+                        self._time_to_seconds(self._get_lx_song_interval(song_info))
+                        - self._time_to_seconds(self._get_lx_song_interval(candidate))
+                    )
+                    self.log.info(
+                        "LX Server自动换源匹配成功: "
+                        f"{self._get_lx_song_name(candidate)} via "
+                        f"{self._get_lx_song_source(candidate)} "
+                        f"(时长误差: {duration_diff}s)"
+                    )
+                    return candidate
+
+        self.log.info("LX Server自动换源未找到合适匹配结果")
+        return None
+
+    def _get_lx_server_auto_switch_sources(self, lx_server_info, original_source):
+        if not isinstance(lx_server_info, dict):
+            return []
+
+        platforms = lx_server_info.get("platforms")
+        if not isinstance(platforms, dict):
+            return []
+
+        return [
+            str(source)
+            for source in platforms
+            if source and str(source) != original_source
+        ]
+
+    def _normalize_lx_search_candidate(self, item):
+        """兼容 lx_server_search 转换后的结构和 LX 原始歌曲结构。"""
+        if not isinstance(item, dict):
+            return {}
+
+        raw = item.get("_raw")
+        if isinstance(raw, dict):
+            candidate = dict(raw)
+        else:
+            candidate = dict(item)
+
+        if not candidate.get("name") and item.get("title"):
+            candidate["name"] = item["title"]
+        if not candidate.get("singer") and item.get("artist"):
+            candidate["singer"] = item["artist"]
+        if not candidate.get("interval") and item.get("duration"):
+            candidate["interval"] = item["duration"]
+        if not candidate.get("source"):
+            candidate["source"] = item.get("source") or item.get("platform", "")
+        return candidate
+
+    def _is_lx_same_song_match(self, target_song, candidate):
+        target_duration = self._time_to_seconds(self._get_lx_song_interval(target_song))
+        candidate_duration = self._time_to_seconds(
+            self._get_lx_song_interval(candidate)
+        )
+        if abs(target_duration - candidate_duration) > 5:
+            return False
+
+        target_name = self._get_lx_song_name(target_song).lower().strip()
+        candidate_name = self._get_lx_song_name(candidate).lower().strip()
+        if not target_name or not candidate_name:
+            return False
+        if target_name not in candidate_name and candidate_name not in target_name:
+            return False
+
+        target_singer = self._get_lx_song_singer(target_song).lower()
+        candidate_singer = self._get_lx_song_singer(candidate).lower()
+        if target_singer and candidate_singer:
+            return (
+                target_singer in candidate_singer or candidate_singer in target_singer
+            )
+        return True
+
+    def _time_to_seconds(self, time_str):
+        if not isinstance(time_str, str) or ":" not in time_str:
+            return 0
+        parts = time_str.split(":")
+        if len(parts) != 2:
+            return 0
+        try:
+            return int(parts[0]) * 60 + int(parts[1])
+        except ValueError:
+            return 0
+
+    def _get_lx_song_name(self, song_info):
+        if not isinstance(song_info, dict):
+            return ""
+        return str(song_info.get("name") or song_info.get("title") or "")
+
+    def _get_lx_song_singer(self, song_info):
+        if not isinstance(song_info, dict):
+            return ""
+        return str(song_info.get("singer") or song_info.get("artist") or "")
+
+    def _get_lx_song_source(self, song_info):
+        if not isinstance(song_info, dict):
+            return ""
+        return str(song_info.get("source") or song_info.get("platform") or "")
+
+    def _get_lx_song_interval(self, song_info):
+        if not isinstance(song_info, dict):
+            return ""
+        return str(song_info.get("interval") or song_info.get("duration") or "")
+
+    def _normalize_lx_server_url(self, base_url, url):
+        """将 LX Server 返回的相对路径转成可直接播放的完整 URL。"""
+        if not isinstance(url, str) or not url:
+            return url
+        parsed_url = urlparse(url)
+        if parsed_url.scheme and parsed_url.netloc:
+            return url
+        return urljoin(base_url, url)
+
+    def _log_lx_server_cache_check(self, song_info, quality, cache_result, cache_hit):
+        """打印 LX Server 缓存检查结果。"""
+        if not isinstance(song_info, dict):
+            song_info = {}
+        song_name = song_info.get("name") or song_info.get("title") or "未知歌曲"
+        singer = song_info.get("singer") or song_info.get("artist") or "未知歌手"
+
+        if cache_hit:
+            self.log.info(
+                "LX Server缓存检查: "
+                f"{song_name} - {singer} ({cache_result.get('quality') or quality}) "
+                f"命中缓存: 是, "
+                f"filename: {cache_result.get('filename', '')}, "
+                f"foundIn: {cache_result.get('foundIn', '')}, "
+                f"folder: {cache_result.get('folder', '')}"
+            )
+        else:
+            self.log.info(
+                f"LX Server缓存检查: {song_name} - {singer} ({quality}) 命中缓存: 否"
+            )
+
+    async def _execute_lx_server_music_lyric(self, song_info):
+        """执行LX Server获取音乐歌词"""
+        lx_server_info = self.js_plugin_manager.get_lx_server_info()
+        if lx_server_info.get("base_url", "") != "":
+            # LX Server接口获取
+            result_data = await self.js_plugin_manager.lx_server_music_lyric(
+                url=lx_server_info.get("base_url") + "/music/lyric",
+                song_info=song_info,
+                lx_server_info=lx_server_info,
+            )
+        else:
+            return {"success": False, "error": "LX Server接口未配置！"}
+
+        return result_data
+
+    async def _search_all_platform_lx(
+        self, lx_server_info, keyword, artist, page, limit
+    ):
+        """聚合搜索所有LXServer平台
+
+        Args:
+            keyword: 搜索关键词
+            artist: 艺术家名称
+            page: 页码
+            limit: 每页数量
+
+        Returns:
+            dict: 搜索结果
+        """
+        platforms = lx_server_info.get("platforms")
+        # 检查 platforms 是否为字典类型，并提取所有 key
+        if not platforms or not isinstance(platforms, dict):
+            return {
+                "success": False,
+                "error": "LX Server未配置platfroms，请先进行配置！",
+            }
+        # 从 platforms 字典中提取所有 key（平台标识）
+        platform_keys = list(platforms.keys())
+        self.log.info(f"LX Server 可用平台：{platform_keys}")
+
+        results = []
+        sources = {}
+
+        # 并行搜索所有插件
+        search_tasks = [
+            self.js_plugin_manager.lx_server_search(
+                url=lx_server_info.get("base_url") + "/music/search",
+                keyword=keyword,
+                artist=artist,
+                page=page,
+                limit=limit,
+                source=platform,
+                lx_server_info=lx_server_info,
+            )
+            for platform in platform_keys
+        ]
+
+        platform_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+        # 处理搜索结果
+        for i, result in enumerate(platform_results):
+            plugin_name = list(platform_keys)[i]
+
+            # 检查是否为异常对象
+            if isinstance(result, Exception):
+                self.log.error(f"插件 {plugin_name} 搜索失败: {result}")
+                continue
+
+            # 检查是否为有效的搜索结果
+            if result and isinstance(result, dict):
+                # 检查是否有错误信息
+                if "error" in result:
+                    self.log.error(
+                        f"插件 {plugin_name} 搜索失败: {result.get('error', '未知错误')}"
+                    )
+                    continue
+
+                # 处理成功的搜索结果
+                data_list = result.get("data", [])
+                if data_list:
+                    results.extend(data_list)
+                    sources[plugin_name] = len(data_list)
+                # 如果没有data字段但有其他数据，也认为是成功的结果
+                elif result:  # 非空字典
+                    results.append(result)
+                    sources[plugin_name] = 1
+
+        # 统一排序并提取前limit条数据
+        if results:
+            unified_result = {"data": results}
+            optimized_result = self.js_plugin_manager.optimize_search_results(
+                unified_result,
+                search_keyword=keyword,
+                limit=limit,
+                search_artist=artist,
+            )
+            results = optimized_result.get("data", [])
+
+        return {
+            "success": True,
+            "data": results,
+            "total": len(results),
+            "sources": sources,
+            "page": page,
+            "limit": limit,
+        }
+
+    # ---------------------------- MFplugins 相关函数 ----------------------------
+
+    async def _execute_plugin_search(self, plugin, keyword, artist, page, limit):
+        """执行插件搜索"""
+        result_data = await self.get_music_list_mf(
+            plugin, keyword=keyword, artist=artist, page=page, limit=limit
+        )
+        result_data["artist"] = artist or "佚名"
+        return result_data
+
+    async def _execute_plugin_playlist_search(self, plugin, keyword, page, limit):
+        """执行 MusicFree 插件歌单搜索具体业务"""
+        if plugin == "all":
+            return {
+                "success": False,
+                "error": "请选择具体的插件平台(如 qq)进行搜单，暂不支持聚合搜单",
+            }
+
+        if self.js_plugin_manager:
+            try:
+                # 同 LX 一样调用执行层的适配方法
+                return await self.js_plugin_manager.plugin_playlist_search(
+                    plugin_name=plugin, keyword=keyword, page=page, limit=limit
+                )
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        else:
+            return {"success": False, "error": "JS Plugin Manager 不可用"}
+
+    async def _execute_plugin_playlist_detail(self, plugin, b64_id):
+        """执行 MusicFree 插件歌单详情具体业务"""
+        if self.js_plugin_manager:
+            try:
+                # 同 LX 一样调用执行层的适配方法
+                return await self.js_plugin_manager.plugin_playlist_detail(
+                    plugin_name=plugin, b64_id=b64_id
+                )
+            except Exception as e:
+                return {"success": False, "error": f"解析失败: {str(e)}"}
+        else:
+            return {"success": False, "error": "JS Plugin Manager 不可用"}
+
+    def _merge_search_results(
+        self, plugin_result, openapi_result, keyword, artist, limit
+    ):
+        merged_data = []
+        sources = {}
+
+        # 先处理 OpenAPI 结果
+        if openapi_result and openapi_result.get("success"):
+            openapi_data = openapi_result.get("data", [])
+            if openapi_data:
+                for item in openapi_data:
+                    item["source"] = "openapi"
+                merged_data.extend(openapi_data)
+                if "sources" in openapi_result:
+                    sources.update(openapi_result["sources"])
+
+        # 再处理插件结果
+        if plugin_result and plugin_result.get("success"):
+            plugin_data = plugin_result.get("data", [])
+            if plugin_data:
+                for item in plugin_data:
+                    item["source"] = "plugin"
+                merged_data.extend(plugin_data)
+                sources.update(plugin_result.get("sources", {}))
+
+        # 如果都没有成功结果，返回错误
+        if not plugin_result.get("success") and not (
+            openapi_result and openapi_result.get("success")
+        ):
+            # 优先返回第一个错误
+            error_result = (
+                plugin_result if not plugin_result.get("success") else openapi_result
+            )
+            return error_result
+
+        # 优化合并后的结果
+        optimized_result = self.js_plugin_manager.optimize_search_results(
+            {"data": merged_data},
+            search_keyword=keyword,
+            limit=limit,
+            search_artist=artist,
+        )
+
+        return {
+            "success": True,
+            "data": optimized_result.get("data", []),
+            "total": len(optimized_result.get("data", [])),
+            "sources": sources,
+            "merged": True,  # 标识这是合并结果
+        }
+
+    async def get_music_list_mf(
+        self, plugin="all", keyword="", artist="", page=1, limit=20, **kwargs
+    ):
+        self.log.info("通过MusicFree插件搜索音乐列表!")
+        """
+        通过MusicFree插件搜索音乐列表
+
+        Args:
+            plugin: 插件名称，"all"表示所有插件
+            keyword: 搜索关键词
+            page: 页码
+            limit: 每页数量
+            **kwargs: 其他参数
+
+        Returns:
+            dict: 搜索结果
+        """
+        # 检查JS插件管理器是否可用
+        if not self.js_plugin_manager:
+            return {"success": False, "error": "JS插件管理器不可用"}
+        try:
+            if plugin == "all":
+                # 搜索所有启用的插件
+                return await self._search_all_plugins(keyword, artist, page, limit)
+            else:
+                # 搜索指定插件
+                return await self._search_specific_plugin(
+                    plugin, keyword, artist, page, limit
+                )
+        except Exception as e:
+            self.log.error(f"搜索音乐时发生错误: {e}")
+            return {"success": False, "error": str(e)}
+
+    # 调用在线搜索歌手，添加歌手歌单并播放
+    async def search_singer_play(self, did, search_key, name):
+        try:
+            # 解析歌手名，可能通过AI或直接分割
+            parsed_keyword, parsed_artist = await self._parse_keyword_with_ai(name)
+            list_name = "_online_" + parsed_artist
+            artist_song_list = self.xiaomusic.music_library.get_music_list().get(
+                list_name, []
+            )
+            if len(artist_song_list) > 0:
+                # 如果歌单存在，则直接播放
+                song_name = artist_song_list[0]
+                await self.xiaomusic.do_play_music_list(did, list_name, song_name)
+            else:
+                # 获取用户配置的平台偏好
+                user_preference = (
+                    self.js_plugin_manager.get_box_play_platform_preference()
+                )
+                # 获取歌曲列表
+                result = await self.get_music_list_online(
+                    plugin=user_preference, keyword=name, limit=10
+                )
+                self.log.info(f"在线搜索歌手的歌曲列表: {result}")
+
+                if result.get("success") and result.get("total") > 0:
+                    # 打印输出 result.data
+                    self.log.info(f"歌曲列表: {result.get('data')}")
+                    list_name = "_online_" + result.get("artist")
+                    # 调用公共函数,处理歌曲信息 -> 添加歌单 -> 播放歌单
+                    return await self.push_music_list_play(
+                        did=did, song_list=result.get("data"), list_name=list_name
+                    )
+                else:
+                    return {"success": False, "error": "未找到歌曲"}
+
+        except Exception as e:
+            # 记录错误日志
+            self.log.error(f"searchKey {search_key} get media source failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def add_singer_song(self, list_name, name):
+        try:
+            # 获取用户配置的平台偏好
+            user_preference = self.js_plugin_manager.get_box_play_platform_preference()
+            self.log.info(f"追加歌手歌曲，当前页码: {self._singer_add_page}")
+            result = await self.get_music_list_online(
+                plugin=user_preference,
+                keyword=name,
+                page=self._singer_add_page,
+                limit=10,
+            )
+            if result.get("success") and result.get("total") > 0:
+                self._handle_music_list(result.get("data"), list_name, True)
+                self._singer_add_page += 1
+            else:
+                return {"success": False, "error": "未找到歌曲"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def reset_singer_add_page(self):
+        self._singer_add_page = 1
+        self.log.info("已重置追加歌曲页码")
+
+    """------------------------私有--------------------------"""
+
+    async def _parse_keyword_with_ai(self, keyword):
+        """
+        使用AI解析关键词，如果AI不可用则使用传统分割方式
+        Args:
+            keyword: 原始关键词
+        Returns:
+            tuple: (parsed_keyword, parsed_artist)
+        """
+        # 获取AI配置信息
+        ai_info = self.js_plugin_manager.get_aiapi_info()
+        # 如果AI启用且配置完整
+        if ai_info.get("enabled", False) and ai_info.get("api_key", "") != "":
+            try:
+                from xiaomusic.utils.openai_utils import (
+                    analyze_music_command as utils_analyze_music_command,
+                )
+
+                params = {"command": keyword, "api_key": ai_info.get("api_key")}
+
+                # 添加可选参数
+                if "base_url" in ai_info:
+                    params["base_url"] = ai_info["base_url"]
+                if "model" in ai_info:
+                    params["model"] = ai_info["model"]
+
+                result = await utils_analyze_music_command(**params)
+
+                if result and (result.get("name") or result.get("artist")):
+                    song_name = result.get("name", "")
+                    artist = result.get("artist", "")
+                    # 构建新的关键词
+                    # keyword = _build_keyword(song_name, artist)
+                    keyword = song_name
+                    self.log.info(f"AI提取到的信息: {result}")
+                    return keyword, artist
+
+            except Exception as e:
+                self.log.error(f"AI提取报错: {e}")
+
+        # 如果AI不可用或处理失败，使用传统分割方式
+        return _parse_keyword_by_dash(keyword)
+
+    # 处理推送的歌单
+    def _handle_music_list(
+        self, song_list=None, list_name="_online_play", append=False
+    ):
+        """
+        数据转换：将外部歌单格式转换为后端支持的格式
+        保存配置：将歌单数据保存到配置中
+        更新列表：触发后端重新生成音乐列表
+        Args:
+            song_list: 歌曲列表
+            list_name: 列表名称
+            append: 是否追加
+        Returns:
+            dict: 操作结果
+        """
+        try:
+            if len(song_list) > 1:
+                #  对歌单 歌名+歌手名进行去重
+                song_list = self._deduplicate_song_list(song_list)
+            # 转换外部歌单格式为内部支持的格式
+            converted_music_list = self._convert_song_list_to_music_items(song_list)
+            if not converted_music_list:
+                return {"success": False, "error": "没有有效的歌曲可以添加"}
+            music_library = self.xiaomusic.music_library
+            # 更新配置中的音乐歌单Json
+            music_library.update_music_list_json(
+                list_name, converted_music_list, append
+            )
+            # 重新生成音乐列表
+            music_library.gen_all_music_list()
+        except Exception as e:
+            self.log.error(f"推送歌单失败: {e}")
+            return {"success": False, "error": str(e)}
+
+    # 在线播放：在线搜索、播放
+    async def online_play(self, did="", arg1="", **kwargs):
+        await self._before_play(did)
+        parts = arg1.split("|")
+        search_key = parts[0].strip() if parts[0] else ""
+        name = parts[1].strip() if len(parts) > 1 else search_key
+        if not name:
+            name = search_key
+        # 没有歌名
+        if not name:
+            return await self.xiaomusic.handle_fatal_error(
+                did, "小Music没有听到搜索歌名哦，请重试。"
+            )
+        self.reset_singer_add_page()
+        self.log.info(f"搜索关键字{search_key},提取的歌名{name}")
+
+        try:
+            res = await self.search_top_one_play(did, search_key, name)
+            # 接口明确返回了失败或者没找到歌曲
+            if res and isinstance(res, dict) and not res.get("success"):
+                return await self.xiaomusic.handle_fatal_error(
+                    did, f"小Music没找到关于{name}的歌曲"
+                )
+            return res
+
+        except Exception:
+            # 异常兜底，代码崩溃
+            return await self.xiaomusic.handle_fatal_error(
+                did, "小Music搜歌过程中出了点小故障"
+            )
+
+    async def online_playlist_play(self, did="", arg1="", **kwargs):
+        """执行语音搜歌单并播放"""
+        await self._before_play(did)
+        search_key = str(arg1).strip() if arg1 else ""
+        if not search_key:
+            return await self.xiaomusic.handle_fatal_error(
+                did, "小Music没有听到搜索歌单内容，请重试。"
+            )
+        self.log.info(f"语音搜索歌单: {search_key}")
+
+        try:
+            # 确定搜索平台 (如果是 all，自动取引擎的第一个可用插件)
+            pref = self.js_plugin_manager.get_box_play_platform_preference()
+            if pref == "all":
+                if self.js_plugin_manager.is_lx_server():
+                    lx_info = self.js_plugin_manager.get_lx_server_info()
+                    platforms = lx_info.get("platforms", {})
+                    pref = list(platforms.keys())[0] if platforms else "tx"
+                else:
+                    enabled = self.js_plugin_manager.get_enabled_plugins()
+                    pref = enabled[0] if enabled else "qq"
+            # 发起搜索 (拿第 1 页)
+            search_res = await self.get_playlist_online(
+                plugin=pref, keyword=search_key, page=1
+            )
+
+            # 极致柔性脱壳，对齐前端的 "dataObj = resJson.data || resJson" 兜底逻辑
+            data_obj = search_res.get("data") or search_res
+
+            if isinstance(data_obj, list):
+                playlists = data_obj
+            elif isinstance(data_obj, dict):
+                playlists = data_obj.get("list", [])
+            else:
+                playlists = []
+
+            if not playlists:
+                return await self.xiaomusic.handle_fatal_error(
+                    did, f"小Music没找到关于{search_key}的歌单"
+                )
+            # 选出最优歌单
+            best_playlist = self.js_plugin_manager.pick_best_playlist(playlists)
+            pl_name = (
+                best_playlist.get("title") or best_playlist.get("name") or "未知歌单"
+            )
+            pl_id = best_playlist.get("id")
+            # 准备详情请求参数 (MF 歌单需要特殊处理)
+            api_type = 2 if self.js_plugin_manager.is_lx_server() else 1
+            target_id = pl_id
+            if api_type == 1:
+                # MF 详情需要 Base64 包装对象
+                target_id = base64.b64encode(
+                    json.dumps(best_playlist).encode("utf-8")
+                ).decode("utf-8")
+
+            # 获取歌单内部全量歌曲
+            detail_res = await self.get_playlist_detail_online(
+                id=target_id, plugin=pref, api_type=api_type
+            )
+            songs = detail_res.get("data", [])
+            if not songs:
+                return await self.xiaomusic.handle_fatal_error(
+                    did, f"小Music获取歌单{pl_name}，里面一首歌都没有"
+                )
+            # 推送到音箱 (归并到 _online_iwebplayer_search)
+            self.log.info(f"成功选中歌单【{pl_name}】，共 {len(songs)} 首歌")
+            return await self.push_music_list_play(
+                did, songs, "_online_iwebplayer_search"
+            )
+        except Exception as e:
+            self.log.error(f"语音搜歌单失败: {e}")
+            return await self.xiaomusic.handle_fatal_error(
+                did, "小Music搜索歌单过程中出了点小故障"
+            )
+
+    async def singer_play(self, did="", arg1="", **kwargs):
+        await self._before_play(did)
+        parts = arg1.split("|")
+        search_key = parts[0].strip() if parts[0] else ""
+        name = parts[1].strip() if len(parts) > 1 else search_key
+        if not name:
+            name = search_key
+        if not name:
+            return await self.xiaomusic.handle_fatal_error(
+                did, "小Music没有听到歌手名哦，请重试。"
+            )
+        self.reset_singer_add_page()
+        self.log.info(f"搜索关键字{search_key},搜索歌手名{name}")
+        try:
+            res = await self.search_singer_play(did, search_key, name)
+            # 没搜到这位歌手的歌
+            if res and isinstance(res, dict) and not res.get("success"):
+                return await self.xiaomusic.handle_fatal_error(
+                    did, f"小Music没找到歌手{name}的歌曲"
+                )
+            return res
+
+        except Exception as e:
+            self.log.error(f"语音搜歌手失败: {e}")
+            # 异常兜底：代码崩溃
+            return await self.xiaomusic.handle_fatal_error(
+                did, "小Music搜歌手时出了点小故障"
+            )
+
+    # 处理推送的歌单并播放
+    async def push_music_list_play(
+        self, did="web_device", song_list=None, list_name="_online_play", **kwargs
+    ):
+        """
+        处理推送的歌单信息 -> 添加歌单 -> 播放歌单
+
+        Args:
+            did: 设备ID
+            song_list: 歌曲列表
+            list_name: 列表名称
+            **kwargs: 其他参数
+        Returns:
+            dict: 操作结果
+        """
+        if song_list is None:
+            song_list = []
+
+        self.log.info(
+            f"推送歌单播放, 歌单名称: {list_name}, 歌曲数量: {len(song_list)}, 设备ID: {did}"
+        )
+        # 验证输入参数
+        if not song_list and len(song_list) > 0:
+            return {"success": False, "error": "歌曲列表不能为空"}
+        try:
+            self.reset_singer_add_page()
+            self._handle_music_list(song_list, list_name)
+            # 如果指定了特定设备，播放歌单
+            if did != "web_device" and self.xiaomusic.did_exist(did):
+                # 歌单推送应该是全部播放，不随机打乱
+                await self.xiaomusic.set_play_type(did, PLAY_TYPE_ALL, False)
+                push_playlist = self.xiaomusic.music_library.get_music_list()[list_name]
+                song_name = push_playlist[0]
+                await self.xiaomusic.do_play_music_list(did, list_name, song_name)
+                return {
+                    "success": True,
+                    "message": f"成功推送歌单 {list_name}",
+                    "list_name": list_name,
+                }
+            else:
+                return {"success": False, "error": "设备不存在！"}
+        except Exception as e:
+            self.log.error(f"推送歌单播放失败: {e}")
+            return {"success": False, "error": str(e)}
+
+    # 在线搜索搜索最符合的一首歌并播放
+    async def search_top_one_play(self, did, search_key, name):
+        try:
+            user_preference = self.js_plugin_manager.get_box_play_platform_preference()
+            # 获取歌曲列表
+            result = await self.get_music_list_online(
+                plugin=user_preference, keyword=name, limit=10
+            )
+
+            if result.get("success") and result.get("total") > 0:
+                # 打印输出 result.data
+                self.log.info(f"在线搜索的歌曲列表: {result.get('data')}")
+                # 根据搜素关键字，智能搜索出最符合的一条music_item
+                top_one_list = await self._search_top_one(
+                    result.get("data"), search_key, name
+                )
+                list_name = "_online_play"
+                # 调用公共函数,处理歌曲信息 -> 添加歌单 -> 播放歌单
+                return await self.push_music_list_play(
+                    did=did, song_list=top_one_list, list_name=list_name
+                )
+            else:
+                return {"success": False, "error": "未找到歌曲"}
+        except Exception as e:
+            # 记录错误日志
+            self.log.error(f"searchKey {search_key} get media source failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    def default_url(self, name="silence.mp3"):
+        """获取静态音频文件的完整 URL"""
+        config = self.xiaomusic.config
+        if config and hasattr(config, "hostname") and hasattr(config, "public_port"):
+            proxy_base = f"{config.hostname}:{config.public_port}"
+        else:
+            proxy_base = "http://192.168.31.241:8090"  # 之前代码中就有的ip，我保留。
+        # return proxy_base + "/static/search.mp3"
+        return f"{proxy_base}/static/{name}"
+
+    async def _before_play(self, did, prompt_audio=None):
+        """播放搜歌前的提示音或静默音（核心作用：打断小爱的原生语音）"""
+        if prompt_audio is None:
+            prompt_audio = getattr(
+                self.xiaomusic.config, "search_prompt_audio", "xiaomusic_ok.mp3"
+            )
+        before_url = self.default_url(prompt_audio)
+        await self.xiaomusic.play_url(did, before_url)
+
+    def _convert_song_list_to_music_items(self, song_list):
+        """
+        将外部歌单格式转换为内部支持的格式
+
+        Args:
+            song_list: 外部歌单数据
+
+        Returns:
+            list: 转换后的音乐项目列表
+        """
+        converted_music_list = []
+        for item in song_list:
+            if isinstance(item, dict):
+                source_url = item.get("url", "")
+                music_item = {}
+                if source_url:
+                    music_item["url"] = source_url
+                else:
+                    # 返回插件源的代理接口
+                    music_item["url"] = self._get_plugin_proxy_url(item)
+                # 其他信息
+                music_item["name"] = item.get("title") + "-" + item.get("artist")
+                music_item["type"] = item.get("type", "music")
+            else:
+                continue
+
+            if music_item["name"]:
+                converted_music_list.append(music_item)
+
+        return converted_music_list
+
+    def _get_plugin_proxy_url(self, origin_data):
+        """获取插件源代理URL"""
+        origin_data = json.dumps(origin_data)
+        datab64 = base64.b64encode(origin_data.encode("utf-8")).decode("utf-8")
+        plugin_source_url = f"self:///api/proxy/plugin-url?data={datab64}"
+        self.log.info(f"plugin_source_url : {plugin_source_url}")
+        return plugin_source_url
+
+    async def _search_all_plugins(self, keyword, artist, page, limit):
+        """搜索所有启用的插件
+
+        Args:
+            keyword: 搜索关键词
+            artist: 艺术家名称
+            page: 页码
+            limit: 每页数量
+
+        Returns:
+            dict: 搜索结果
+        """
+        enabled_plugins = self.js_plugin_manager.get_enabled_plugins()
+        if not enabled_plugins:
+            return {"success": False, "error": "没找到可用的插件，请先进行配置！"}
+
+        results = []
+        sources = {}
+
+        # 计算每个插件的限制数量
+        plugin_count = len(enabled_plugins)
+        item_limit = max(1, limit // plugin_count) if plugin_count > 0 else limit
+
+        # 并行搜索所有插件
+        search_tasks = [
+            self._search_plugin_task(plugin_name, keyword, page, item_limit)
+            for plugin_name in enabled_plugins
+        ]
+
+        plugin_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+        # 处理搜索结果
+        for i, result in enumerate(plugin_results):
+            plugin_name = list(enabled_plugins)[i]
+
+            # 检查是否为异常对象
+            if isinstance(result, Exception):
+                self.log.error(f"插件 {plugin_name} 搜索失败: {result}")
+                continue
+
+            # 检查是否为有效的搜索结果
+            if result and isinstance(result, dict):
+                # 检查是否有错误信息
+                if "error" in result:
+                    self.log.error(
+                        f"插件 {plugin_name} 搜索失败: {result.get('error', '未知错误')}"
+                    )
+                    continue
+
+                # 处理成功的搜索结果
+                data_list = result.get("data", [])
+                if data_list:
+                    results.extend(data_list)
+                    sources[plugin_name] = len(data_list)
+                # 如果没有data字段但有其他数据，也认为是成功的结果
+                elif result:  # 非空字典
+                    results.append(result)
+                    sources[plugin_name] = 1
+
+        # 统一排序并提取前limit条数据
+        if results:
+            unified_result = {"data": results}
+            optimized_result = self.js_plugin_manager.optimize_search_results(
+                unified_result,
+                search_keyword=keyword,
+                limit=limit,
+                search_artist=artist,
+            )
+            results = optimized_result.get("data", [])
+
+        return {
+            "success": True,
+            "data": results,
+            "total": len(results),
+            "sources": sources,
+            "page": page,
+            "limit": limit,
+        }
+
+    async def _search_specific_plugin(self, plugin, keyword, artist, page, limit):
+        """搜索指定插件
+
+        Args:
+            plugin: 插件名称
+            keyword: 搜索关键词
+            artist: 艺术家名称
+            page: 页码
+            limit: 每页数量
+
+        Returns:
+            dict: 搜索结果
+        """
+        try:
+            results = self.js_plugin_manager.search(plugin, keyword, page, limit)
+
+            # 额外检查 resources 字段
+            data_list = results.get("data", [])
+            if data_list:
+                # 优化搜索结果排序
+                results = self.js_plugin_manager.optimize_search_results(
+                    results, search_keyword=keyword, limit=limit, search_artist=artist
+                )
+
+            return {
+                "success": True,
+                "data": results.get("data", []),
+                "total": results.get("total", 0),
+                "page": page,
+                "limit": limit,
+            }
+        except Exception as e:
+            self.log.error(f"插件 {plugin} 搜索失败: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _search_plugin_task(self, plugin_name, keyword, page, limit):
+        """单个插件搜索任务"""
+        try:
+            return self.js_plugin_manager.search(plugin_name, keyword, page, limit)
+        except Exception as e:
+            # 直接抛出异常，让 asyncio.gather 处理
+            raise e
+
+    # 调用MusicFree插件、LXServer API获取真实播放url
+    async def get_media_source_url(self, music_item, quality: str = "standard"):
+        """获取音乐项的媒体源URL
+        Args:
+            music_item : MusicFree插件定义的 IMusicItem
+            quality: 音质参数
+        Returns:
+            dict: 包含成功状态和URL信息的字典
+        """
+        # 自动判断接口类型
+        is_lx_server = self.js_plugin_manager.is_lx_server(context_info=music_item)
+        if is_lx_server:
+            # LX Server在线搜索
+            return await self._execute_lx_server_music_url(
+                song_info=music_item.get("_raw"),
+                quality=quality,
+            )
+        else:
+            # kwargs可追加
+            kwargs = {"quality": quality}
+            return await self._call_plugin_method(
+                plugin_name=music_item.get("platform"),
+                method_name="get_media_source",
+                music_item=music_item,
+                result_key="url",
+                required_field="url",
+                **kwargs,
+            )
+
+    async def get_media_lyric(self, music_item):
+        """获取音乐项的歌词 Lyric
+
+        Args:
+            music_item: MusicFree插件定义的 IMusicItem
+
+        Returns:
+            dict: 包含成功状态和歌词信息的字典
+        """
+        # 自动判断接口类型
+        is_lx_server = self.js_plugin_manager.is_lx_server(context_info=music_item)
+        if is_lx_server:
+            # LX Server在线搜索
+            return await self._execute_lx_server_music_lyric(
+                song_info=music_item.get("_raw"),
+            )
+        else:
+            return await self._call_plugin_method(
+                plugin_name=music_item.get("platform"),
+                method_name="get_lyric",
+                music_item=music_item,
+                result_key="rawLrc",
+                required_field="rawLrc",
+            )
+
+    def _deduplicate_song_list(self, song_list):
+        """
+        根据歌名+歌手名对歌单中歌曲进行去重
+        Args:
+            song_list: 原始歌曲列表
+        Returns:
+            unique_songs: 去重后的歌曲列表
+        """
+        seen = set()
+        unique_songs = []
+
+        for song in song_list:
+            # 构建唯一标识：歌名+歌手名
+            song_title = song.get("title", "")
+            song_artist = song.get("artist", "")
+
+            # 创建唯一标识符
+            unique_key = f"{song_title.lower()}_{song_artist.lower()}"
+
+            # 如果未见过此唯一标识，则添加到结果中
+            if unique_key not in seen:
+                seen.add(unique_key)
+                unique_songs.append(song)
+
+        self.log.info(
+            f"歌单去重完成，原始数量: {len(song_list)}, 去重后数量: {len(unique_songs)}"
+        )
+        return unique_songs
+
+    async def _search_top_one(self, music_items, search_key, name):
+        """智能搜索出最符合的一条music_item"""
+        try:
+            if not music_items:
+                return []
+
+            self.log.info(f"搜索关键字: {search_key}；歌名：{name}")
+
+            # 使用更高效的算法进行匹配
+            if len(music_items) == 1:
+                return music_items
+
+            # 计算每个项目的匹配分数
+            keyword = search_key.lower().strip()
+            if not keyword:
+                return [music_items[0]]  # 如果没有搜索词，返回第一首
+
+            def calculate_match_score(item):
+                """计算匹配分数"""
+                title = (item.get("title", "") or "").lower()
+                artist = (item.get("artist", "") or "").lower()
+
+                score = 0
+                # 歌曲名匹配权重
+                if keyword in title:
+                    # 完全匹配得最高分
+                    if title == keyword:
+                        score += 90
+                    # 开头匹配
+                    elif title.startswith(keyword):
+                        score += 70
+                    # 结尾匹配
+                    elif title.endswith(keyword):
+                        score += 50
+                    # 包含匹配
+                    else:
+                        score += 30
+                # 部分字符匹配
+                elif any(char in title for char in keyword.split()):
+                    score += 10
+
+                # 艺术家名匹配权重
+                if keyword in artist:
+                    # 完全匹配
+                    if artist == keyword:
+                        score += 9
+                    # 开头匹配
+                    elif artist.startswith(keyword):
+                        score += 7
+                    # 结尾匹配
+                    elif artist.endswith(keyword):
+                        score += 5
+                    # 包含匹配
+                    else:
+                        score += 3
+                # 部分字符匹配
+                elif any(char in artist for char in keyword.split()):
+                    score += 1
+
+                return score
+
+            # 按匹配分数排序，返回分数最高的项目
+            sorted_items = sorted(music_items, key=calculate_match_score, reverse=True)
+            return [sorted_items[0]]
+
+        except Exception as e:
+            self.log.error(f"_search_top_one error: {e}")
+            # 出现异常时返回第一个项目
+            return [music_items[0]] if music_items else []
+
+    async def _call_plugin_method(
+        self,
+        plugin_name: str,
+        method_name: str,
+        music_item: dict,
+        result_key: str,
+        required_field: str = None,
+        **kwargs,
+    ):
+        """通用方法：调用 JS 插件的方法并返回结果
+
+        Args:
+            plugin_name: 插件名称
+            method_name: 插件方法名（如 get_media_source 或 get_lyric）
+            music_item: 音乐项数据
+            result_key: 返回结果中的字段名（如 'url' 或 'rawLrc'）
+            required_field: 必须存在的字段（用于校验）
+            **kwargs: 传递给插件方法的额外参数
+
+        Returns:
+            dict: 包含 success 和对应字段的字典
+        """
+        if not music_item:
+            return {"success": False, "error": "Music item required"}
+
+        # 检查插件管理器是否可用
+        if not self.js_plugin_manager:
+            return {"success": False, "error": "JS Plugin Manager not available"}
+
+        enabled_plugins = self.js_plugin_manager.get_enabled_plugins()
+        if plugin_name not in enabled_plugins:
+            return {"success": False, "error": f"Plugin {plugin_name} not enabled"}
+        try:
+            # 调用插件方法，传递额外参数
+            result = getattr(self.js_plugin_manager, method_name)(
+                plugin_name, music_item, **kwargs
+            )
+            if (
+                not result
+                or not result.get(result_key)
+                or result.get(result_key) == "None"
+            ):
+                return {"success": False, "error": f"Failed to get {result_key}"}
+
+            # 如果指定了必填字段，则额外校验
+            if required_field and not result.get(required_field):
+                return {
+                    "success": False,
+                    "error": f"Missing required field: {required_field}",
+                }
+            # 追加属性后返回
+            result["success"] = True
+            return result
+
+        except Exception as e:
+            self.log.error(f"Plugin {plugin_name} {method_name} failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    @staticmethod
+    async def _make_request_with_validation(
+        url: str, timeout: int, convert_m4s: bool = False
+    ) -> str:
+        """
+        通用的URL请求和验证方法
+
+        Args:
+            url (str): 原始音乐URL
+            timeout (int): 请求超时时间(秒)
+
+        Returns:
+            str: 最终的真实播放URL，如果代理不成功则返回原始URL
+        """
+
+        # 内部辅助函数：检查主机解析到的IP是否安全，防止访问内网/本地地址
+        def _is_safe_hostname(parsed) -> bool:
+            hostname = parsed.hostname
+            if not hostname:
+                return False
+            try:
+                # 解析主机名对应的所有地址
+                addrinfo_list = socket.getaddrinfo(hostname, None)
+            except Exception:
+                return False
+            for family, _, _, _, sockaddr in addrinfo_list:
+                ip_str = (
+                    sockaddr[0] if family in (socket.AF_INET, socket.AF_INET6) else None
+                )
+                if not ip_str:
+                    continue
+                try:
+                    ip_obj = ipaddress.ip_address(ip_str)
+                except ValueError:
+                    return False
+                # 拒绝内网、回环、链路本地、多播和保留地址
+                if (
+                    ip_obj.is_private
+                    or ip_obj.is_loopback
+                    or ip_obj.is_link_local
+                    or ip_obj.is_multicast
+                    or ip_obj.is_reserved
+                ):
+                    return False
+            return True
+
+        try:
+            # 验证URL格式
+            parsed_url = urlparse(url)
+            if not parsed_url.scheme or not parsed_url.netloc:
+                return url  # 返回原始URL
+            # 仅允许 http/https
+            if parsed_url.scheme not in ("http", "https"):
+                return url  # 返回原始URL
+            # 检查主机是否安全，防止SSRF到内网
+            if not _is_safe_hostname(parsed_url):
+                return url  # 返回原始URL
+
+            # 创建aiohttp客户端会话
+            async with aiohttp.ClientSession() as session:
+                # 发送HEAD请求跟随重定向
+                async with session.head(
+                    url,
+                    allow_redirects=True,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as response:
+                    # 获取最终重定向后的URL
+                    final_url = str(response.url)
+                    return final_url
+        except Exception:
+            return url  # 返回原始URL

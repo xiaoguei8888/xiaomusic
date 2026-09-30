@@ -12,22 +12,21 @@ from starlette.middleware.gzip import GZipMiddleware
 from xiaomusic import __version__
 from xiaomusic.api.dependencies import (
     AuthStaticFiles,
+    initialize_state,
     reset_http_server,
 )
 
 if TYPE_CHECKING:
     from xiaomusic.xiaomusic import XiaoMusic
 
-# 导入内部状态管理器
-from xiaomusic.api.dependencies import _state
-
 
 @asynccontextmanager
 async def app_lifespan(app):
     """应用生命周期管理"""
     task = None
-    if _state.is_initialized():
-        task = asyncio.create_task(_state._xiaomusic.run_forever())
+    xiaomusic = getattr(app.state, "xiaomusic", None)
+    if xiaomusic is not None:
+        task = asyncio.create_task(xiaomusic.run_forever())
     try:
         yield
     except asyncio.CancelledError:
@@ -40,11 +39,11 @@ async def app_lifespan(app):
             try:
                 await task
             except asyncio.CancelledError:
-                if _state.is_initialized():
-                    _state._log.info("Background task cleanup: CancelledError")
+                if getattr(app.state, "log", None):
+                    app.state.log.info("Background task cleanup: CancelledError")
             except Exception as e:
-                if _state.is_initialized():
-                    _state._log.error(f"Background task cleanup error: {e}")
+                if getattr(app.state, "log", None):
+                    app.state.log.error(f"Background task cleanup error: {e}")
 
 
 # 创建 FastAPI 应用实例
@@ -76,7 +75,7 @@ def HttpInit(_xiaomusic: "XiaoMusic"):
         _xiaomusic: XiaoMusic 实例
     """
     # 初始化应用状态
-    _state.initialize(_xiaomusic)
+    initialize_state(_xiaomusic)
 
     # 挂载静态文件
     folder = os.path.dirname(os.path.dirname(__file__))  # xiaomusic 目录

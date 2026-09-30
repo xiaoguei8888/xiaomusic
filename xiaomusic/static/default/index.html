@@ -8,144 +8,689 @@
     <!-- 预加载字体文件，减少加载延迟 -->
     <link rel="preload" href="./materialicons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="./materialiconsoutlined.woff2" as="font" type="font/woff2" crossorigin>
-    <script src="./jquery-3.7.1.min.js?version=1780982533"></script>
-    <link rel="stylesheet" href="./main.css?version=1780982533">
+    <script src="./jquery-3.7.1.min.js?version=1790742200"></script>
+    <link rel="stylesheet" href="./main.css?version=1790742200">
+    <link rel="stylesheet" href="./setting.css?version=1790742200">
     <link rel="icon" href="./favicon.ico">
 </head>
 
 <body class="index_page">
-    <div class="player" role="main" aria-label="音乐播放器">
-        <h1>小爱音箱播放器
-            <a href="https://xdocs.hanxi.cc/issues/changelog.html" target="_blank" class="version-link"><span id="version">0.4.0</span><span id="versionnew" class="new-badge"></span></a>
-        </h1>
-
-        <label for="did" class="label-with-toggle">选择播放设备:
-            <div class="toggle-switch-container">
-                <label class="toggle-label">语音口令</label>
-                <div id="pullAskToggle" class="toggle-switch" role="switch" aria-checked="false" aria-label="语音口令开关" onclick="togglePullAsk()" tabindex="0">
-                    <div class="toggle-slider"></div>
+    <div class="player-bar" role="region" aria-label="播放控制栏">
+        <div class="player-bar-inner">
+            <div id="device-audio" class="audio-section player-bar-progress">
+                <div class="player-bar-progress-row">
+                    <span class="current-time" id="current-time">0:00</span>
+                    <progress class="progress" id="progress" value="0" max="100" role="progressbar" aria-label="播放进度"
+                              aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="未播放"
+                              onclick="seekTo(event)"></progress>
+                    <span class="duration" id="duration">00:00</span>
                 </div>
             </div>
-        </label>
+            <div class="player-bar-main">
+                <div class="current-song" id="playering-music">当前播放歌曲：无</div>
+                <div class="player-controls button-group">
+                    <div onclick="prevTrack()" class="control-button device-enable" role="button" aria-label="上一首" tabindex="0">
+                        <span class="material-icons" aria-hidden="true">skip_previous</span>
+                        <span class="tooltip">上一首</span>
+                    </div>
+                    <div onclick="play()" class="control-button" role="button" aria-label="播放/暂停" tabindex="0">
+                        <span id="playPauseIcon" class="material-icons-outlined play" aria-hidden="true">play_circle_outline</span>
+                        <span class="tooltip">播放/暂停</span>
+                    </div>
+                    <div onclick="nextTrack()" class="control-button device-enable" role="button" aria-label="下一首" tabindex="0">
+                        <span class="material-icons" aria-hidden="true">skip_next</span>
+                        <span class="tooltip">下一首</span>
+                    </div>
+                </div>
+                <div class="player-bar-actions">
+                    <div onclick="toggleVolume()" class="control-button device-enable" role="button" aria-label="调节音量" tabindex="0">
+                        <span class="material-icons" aria-hidden="true">volume_up</span>
+                        <span class="tooltip">音量</span>
+                    </div>
+                    <div id="modeBtn" onclick="togglePlayMode()" class="control-button device-enable" role="button" aria-label="切换播放模式" tabindex="0">
+                        <span class="material-icons" aria-hidden="true">shuffle</span>
+                        <span class="tooltip">切换播放模式</span>
+                    </div>
+                    <div onclick="toggleTimer()" class="control-button device-enable" role="button" aria-label="定时关机" tabindex="0">
+                        <span class="material-icons" aria-hidden="true">timer</span>
+                        <span class="tooltip">定时</span>
+                    </div>
+                    <button class="control-button panel-entry" type="button" data-panel="settings" aria-expanded="false" aria-controls="panel-settings" aria-label="打开设置面板">
+                        <span class="material-icons" aria-hidden="true">settings</span>
+                        <span class="tooltip">设置</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sheet-backdrop" id="sheet-backdrop" aria-hidden="true"></div>
+
+    <div class="sheet-stage" id="sheet-stage">
+        <section class="sheet" id="panel-settings" role="dialog" aria-modal="true" aria-labelledby="panel-settings-title">
+            <div class="sheet-inner">
+                <div class="sheet-handle" aria-hidden="true"></div>
+                <div class="sheet-header">
+                    <h2 class="sheet-title" id="panel-settings-title">设置</h2>
+                    <button class="sheet-close" type="button" aria-label="关闭设置面板">
+                        <span class="material-icons" aria-hidden="true">close</span>
+                    </button>
+                </div>
+                <div class="sheet-body">
+                    <div class="setting-container" id="setting" role="main">
+                    <section class="accordion-item" data-section="accordion-1">
+                    <button type="button" class="accordion-header" id="accordion-1-toggle" aria-expanded="false" aria-controls="accordion-1-content">
+                    <span class="accordion-title">设备选择</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-1-content" role="region" aria-labelledby="accordion-1-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="device-header">
+                    <label for="mi_did">*勾选设备(至少勾选1个):</label>
+                    <button class="option-inline" id="update-devices">获取设备列表(没自动更新时使用)</button>
+                    </div>
+                    <div id="mi_did" class="device-selection"></div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-2">
+                    <button type="button" class="accordion-header" id="accordion-2-toggle" aria-expanded="false" aria-controls="accordion-2-content">
+                    <span class="accordion-title">账号登录</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-2-content" role="region" aria-labelledby="accordion-2-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <div class="form-row">
+                    <label for="login-status">登录状态:</label>
+                    <div id="login-status" class="login-status">检测中…</div>
+                    </div>
+                    <div class="form-row">
+                    <label for="login-account">小米账号:</label>
+                    <input id="login-account" class="setting-input" type="text" placeholder="小米 ID 或手机号" autocomplete="username" />
+                    </div>
+                    <div class="form-row">
+                    <label for="login-password">密码:</label>
+                    <input id="login-password" class="setting-input" type="password" placeholder="小米账号密码" autocomplete="current-password" />
+                    </div>
+                    <div class="form-row">
+                    <button class="option-inline" id="login-submit" type="button">
+                    <span class="material-icons" aria-hidden="true">login</span>
+                    <span>登录</span>
+                    </button>
+                    </div>
+                    <div class="form-row" id="verify-box" style="display:none;">
+                    <label id="verify-label">短信验证码:</label>
+                    <div id="verify-input-row" style="display:flex;gap:8px;">
+                    <input id="verify-code" class="setting-input" type="text" inputmode="numeric" placeholder="请输入验证码" autocomplete="one-time-code" />
+                    <button class="option-inline" id="verify-submit" type="button">
+                    <span class="material-icons" aria-hidden="true">verified</span>
+                    <span>提交</span>
+                    </button>
+                    </div>
+                    <div id="verify-status" style="margin-top:6px;color:#666;"></div>
+                    </div>
+                    <div class="form-row">
+                    <label>或用米家 App 扫描二维码登录:</label>
+                    <div id="qrcode-box" style="display:none; text-align:center;">
+                    <img id="qrcode-img" alt="登录二维码"
+                    style="width:220px;height:220px;background:#fff;padding:8px;border:1px solid #ddd;border-radius:8px;" />
+                    <div id="qrcode-status" style="margin-top:8px;color:#666;">正在获取二维码…</div>
+                    </div>
+                    <button class="option-inline" id="show-qrcode" type="button">
+                    <span class="material-icons" aria-hidden="true">qr_code</span>
+                    <span>刷新二维码</span>
+                    </button>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-3">
+                    <button type="button" class="accordion-header" id="accordion-3-toggle" aria-expanded="false" aria-controls="accordion-3-content">
+                    <span class="accordion-title">服务地址</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-3-content" role="region" aria-labelledby="accordion-3-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <div class="form-item">
+                    <label for="hostname" class="setting-label">*NAS的IP或域名:
+                    <button class="option-inline" id="auto-hostname" aria-label="自动填写主机名">
+                    <span class="material-icons" aria-hidden="true">auto_fix_high</span>
+                    <span>自动填</span>
+                    </button>
+                    </label>
+                    <input id="hostname" type="text" aria-required="true" />
+                    </div>
+
+                    <div class="form-item">
+                    <label for="public_port" class="setting-label">*本地端口:
+                    <button class="option-inline" id="auto-port" aria-label="自动填写端口">
+                    <span class="material-icons" aria-hidden="true">auto_fix_high</span>
+                    <span>自动填</span>
+                    </button>
+                    </label>
+                    <input id="public_port" type="number" value="58090" aria-required="true" />
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-4">
+                    <button type="button" class="accordion-header" id="accordion-4-toggle" aria-expanded="false" aria-controls="accordion-4-content">
+                    <span class="accordion-title">音乐库与缓存</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-4-content" role="region" aria-labelledby="accordion-4-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="music_path">音乐目录:</label>
+                    <input id="music_path" type="text" value="music" />
+
+                    <label for="download_path">音乐下载目录(必须是music的子目录):</label>
+                    <input id="download_path" type="text" value="music/download" />
+
+                    <label for="conf_path">配置文件目录:</label>
+                    <input id="conf_path" type="text" />
+
+                    <label for="cache_dir">缓存文件目录:</label>
+                    <input id="cache_dir" type="text" value="music/cache" />
+
+                    <label for="cache_max_size_mb">在线歌曲缓存容量(MB, 0为不缓存):</label>
+                    <input id="cache_max_size_mb" type="number" value="500" />
+
+                    <label for="temp_path">临时文件目录:</label>
+                    <input id="temp_path" type="text" value="music/tmp" />
+
+                    <label for="ffmpeg_location">ffmpeg路径:</label>
+                    <input id="ffmpeg_location" type="text" value="./ffmpeg/bin" />
+
+                    <label for="exclude_dirs">忽略目录(逗号分割):</label>
+                    <input id="exclude_dirs" type="text" value="@eaDir,tmp" />
+
+                    <label for="ignore_tag_dirs">不扫描标签信息目录(逗号分割):</label>
+                    <input id="ignore_tag_dirs" type="text" value="" />
+
+                    <label for="music_path_depth">目录深度:</label>
+                    <input id="music_path_depth" type="number" value="10" />
+
+                    <label for="recently_added_playlist_len">最近新增的歌曲数量:</label>
+                    <input id="recently_added_playlist_len" type="number" value="50" />
+
+                    <label for="enable_auto_clean_temp">启用定时清理临时文件(每日凌晨3点):</label>
+                    <select id="enable_auto_clean_temp">
+                    <option value="true" selected>开启</option>
+                    <option value="false">关闭</option>
+                    </select>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-5">
+                    <button type="button" class="accordion-header" id="accordion-5-toggle" aria-expanded="false" aria-controls="accordion-5-content">
+                    <span class="accordion-title">播放控制</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-5-content" role="region" aria-labelledby="accordion-5-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="delay_sec">下一首歌延迟播放秒数(支持负数):</label>
+                    <input id="delay_sec" type="number" value="0" />
+
+                    <label for="use_music_api">型号兼容模式:</label>
+                    <select id="use_music_api">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+
+                    <label for="continue_play">启用触屏版歌曲封面及歌词，启用继续播放(可能导致兼容性问题):</label>
+                    <select id="continue_play">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+
+                    <div style="display: flex; gap: 15px; align-items: flex-end; width: 100%;">
+
+                    <div style="flex: 1; display: flex; flex-direction: column;">
+                    <label for="use_music_audio_id" style="margin-bottom: 6px; display: block;">触屏版默认封面选择(触屏版歌曲封面设为true，才能选择):</label>
+                    <select id="use_music_audio_id" style="width: 100%;">
+                    <option value="436490277987655" data-img="https://y.gtimg.cn/music/photo_new/T001R500x500M000000XFSu32aHi5w_7.jpg" selected>星河雀影</option>
+                    <option value="2284848025338642973" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000003MUXTN0hp00B_1.jpg">鲸落</option>
+                    <option value="3032977774822294038" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000000P52RF0ePrMh_1.jpg">仲夏涟漪</option>
+                    <option value="3573885250148762567" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000001XSQmy0sbGRe_1.jpg">星辰妙漫</option>
+                    <option value="2821554561643067278" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000003mtKhW0DFTMt_3.jpg">所念皆星河</option>
+                    <option value="1949968393125757902" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000003zlK2H16UvnY_2.jpg">柳岸泊舟</option>
+                    <option value="1963040443250771008" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000004HWTo41EPK3L_2.jpg">花冠少女</option>
+                    <option value="703059981413384476" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000002OGzkK12zb2D_1.jpg">月夜</option>
+                    <option value="2182123779048604035" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000001wIZl83iCjqo_1.jpg">橘子海</option>
+                    <option value="1299407089048748519" data-img="https://y.gtimg.cn/music/photo_new/T001R500x500M000002knSQ01Ts1vS_0.jpg">拾音者</option>
+                    <option value="2234266363446166675" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000003TkJYk3nWUoB_2.jpg">唱片</option>
+                    <option value="224322594261696542" data-img="https://y.gtimg.cn/music/photo_new/T002R500x500M000003k0x5s4Ale28_1.jpg">音符</option>
+
+                    </select>
+                    </div>
+
+                    <img id="cover_preview" src="" style="width: 64px; height: 64px; border-radius: 6px; object-fit: cover; border: 1px solid #ddd; display: none;" alt="预览" />
+                    </div>
+
+                    <label for="active_cmd">允许唤醒的命令:</label>
+                    <input id="active_cmd" type="text"
+                    value="play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music,online_play,singer_play" />
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-6">
+                    <button type="button" class="accordion-header" id="accordion-6-toggle" aria-expanded="false" aria-controls="accordion-6-content">
+                    <span class="accordion-title">搜索匹配</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-6-content" role="region" aria-labelledby="accordion-6-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="fuzzy_match_cutoff">模糊匹配阈值(0.1~0.9):</label>
+                    <input id="fuzzy_match_cutoff" type="number" value="0.6" />
+
+                    <label for="enable_fuzzy_match">开启模糊搜索:</label>
+                    <select id="enable_fuzzy_match">
+                    <option value="true" selected>true</option>
+                    <option value="false">false</option>
+                    </select>
+
+                    <label for="enable_multi_result_selection">开启多结果选择功能:</label>
+                    <select id="enable_multi_result_selection" onchange="toggleMultiResultAction()">
+                    <option value="true" selected>开启</option>
+                    <option value="false">关闭</option>
+                    </select>
+
+                    <div id="multi_result_action_row">
+                    <label for="multi_result_action">多结果处理:</label>
+                    <select id="multi_result_action">
+                    <option value="random" selected>随机播放</option>
+                    <option value="first">从第一首开始播放</option>
+                    </select>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-7">
+                    <button type="button" class="accordion-header" id="accordion-7-toggle" aria-expanded="false" aria-controls="accordion-7-content">
+                    <span class="accordion-title">音频处理</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-7-content" role="region" aria-labelledby="accordion-7-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="get_duration_type">获取时长方式:</label>
+                    <select id="get_duration_type">
+                    <option value="ffprobe" selected>ffprobe</option>
+                    <option value="mutagen">mutagen</option>
+                    </select>
+
+                    <label for="loudnorm">均衡歌曲音量大小(loudnorm滤镜):</label>
+                    <input id="loudnorm" type="text" placeholder="loudnorm=I=-14:TP=-1.5:LRA=6" />
+
+                    <label for="remove_id3tag">去除MP3 ID3v2和填充:</label>
+                    <select id="remove_id3tag">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+
+                    <label for="convert_to_mp3">转换为MP3:</label>
+                    <select id="convert_to_mp3">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+
+                    <label for="enable_save_tag">启用ID3标签写入文件:</label>
+                    <select id="enable_save_tag">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-8">
+                    <button type="button" class="accordion-header" id="accordion-8-toggle" aria-expanded="false" aria-controls="accordion-8-content">
+                    <span class="accordion-title">语音控制</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-8-content" role="region" aria-labelledby="accordion-8-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="edge_tts_voice">Edge-TTS 语音角色:</label>
+                    <select id="edge_tts_voice">
+                    <option value="disable">不使用(默认)</option>
+                    <option value="zh-CN-XiaoxiaoNeural">晓晓 (女声,温柔)</option>
+                    <option value="zh-CN-XiaoyiNeural" selected>
+                    晓伊 (女声,活泼)
+                    </option>
+                    <option value="zh-CN-YunjianNeural">云健 (男声,成熟)</option>
+                    <option value="zh-CN-YunxiNeural">云希 (男声,阳光)</option>
+                    <option value="zh-CN-YunxiaNeural">云夏 (男声,少年)</option>
+                    <option value="zh-CN-YunyangNeural">云扬 (男声,新闻)</option>
+                    <option value="zh-CN-liaoning-XiaobeiNeural">
+                    晓北 (女声,东北)
+                    </option>
+                    <option value="zh-CN-shaanxi-XiaoniNeural">
+                    晓妮 (女声,陕西)
+                    </option>
+                    <option value="zh-HK-HiuGaaiNeural">曉佳 (女声,粤语)</option>
+                    <option value="zh-HK-HiuMaanNeural">曉曼 (女声,粤语)</option>
+                    <option value="zh-HK-WanLungNeural">雲龍 (男声,粤语)</option>
+                    <option value="zh-TW-HsiaoChenNeural">曉臻 (女声,台湾)</option>
+                    <option value="zh-TW-YunJheNeural">雲哲 (男声,台湾)</option>
+                    <option value="zh-TW-HsiaoYuNeural">曉雨 (女声,台湾)</option>
+                    </select>
+
+                    <label for="stop_tts_msg">停止提示音 (触屏音箱建议留空):</label>
+                    <input id="stop_tts_msg" type="text" value="收到,再见" />
+
+                    <label for="play_type_one_tts_msg">单曲循环提示音:</label>
+                    <input id="play_type_one_tts_msg" type="text" value="已经设置为单曲循环" />
+
+                    <label for="play_type_all_tts_msg">全部循环提示音:</label>
+                    <input id="play_type_all_tts_msg" type="text" value="已经设置为全部循环" />
+
+                    <label for="play_type_rnd_tts_msg">随机播放提示音:</label>
+                    <input id="play_type_rnd_tts_msg" type="text" value="已经设置为随机播放" />
+
+                    <label for="play_type_sin_tts_msg">单曲播放提示音:</label>
+                    <input id="play_type_sin_tts_msg" type="text" value="已经设置为单曲播放" />
+
+                    <label for="play_type_seq_tts_msg">顺序播放提示音:</label>
+                    <input id="play_type_seq_tts_msg" type="text" value="已经设置为顺序播放" />
+
+                    <label for="keywords_playlocal">播放本地歌曲口令:</label>
+                    <input id="keywords_playlocal" type="text" value="播放本地歌曲,本地播放歌曲" />
+
+                    <label for="keywords_play">播放歌曲口令:</label>
+                    <input id="keywords_play" type="text" value="播放歌曲,放歌曲" />
+
+                    <label for="keywords_playlist">播放列表口令:</label>
+                    <input id="keywords_playlist" type="text" value="播放列表,播放歌单" />
+
+                    <label for="keywords_stop">停止口令:</label>
+                    <input id="keywords_stop" type="text" value="关机,暂停,停止,停止播放" />
+
+                    <label for="enable_cmd_del_music">开启语音删除歌曲:</label>
+                    <select id="enable_cmd_del_music">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-9">
+                    <button type="button" class="accordion-header" id="accordion-9-toggle" aria-expanded="false" aria-controls="accordion-9-content">
+                    <span class="accordion-title">设备对话</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-9-content" role="region" aria-labelledby="accordion-9-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="group_list">设备分组配置（不推荐，声音不同步）:<a href="https://xdocs.hanxi.cc/issues/366.html"
+                    target="_blank">文档</a></label>
+                    <input id="group_list" type="text" placeholder="did1:组名1,did2:组名1,did3:组名2" />
+
+                    <label for="enable_pull_ask">获取对话记录:</label>
+                    <select id="enable_pull_ask">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+
+                    <label for="pull_ask_sec">获取对话记录间隔(秒):</label>
+                    <input id="pull_ask_sec" type="number" value="1" />
+
+                    <label for="get_ask_by_mina">特殊型号获取对话记录:</label>
+                    <select id="get_ask_by_mina">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-10">
+                    <button type="button" class="accordion-header" id="accordion-10-toggle" aria-expanded="false" aria-controls="accordion-10-content">
+                    <span class="accordion-title">歌单</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-10-content" role="region" aria-labelledby="accordion-10-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="custom_play_list_json">歌单内容:<a href="https://xdocs.hanxi.cc/issues/78.html"
+                    target="_blank">格式文档</a></label>
+                    <textarea id="custom_play_list_json" type="text"></textarea>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-11">
+                    <button type="button" class="accordion-header" id="accordion-11-toggle" aria-expanded="false" aria-controls="accordion-11-content">
+                    <span class="accordion-title">安全访问</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-11-content" role="region" aria-labelledby="accordion-11-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="disable_httpauth">关闭控制台密码验证:</label>
+                    <select id="disable_httpauth">
+                    <option value="true" selected>true</option>
+                    <option value="false">false</option>
+                    </select>
+
+                    <label for="httpauth_username">控制台账户:</label>
+                    <input id="httpauth_username" type="text" value="" />
+
+                    <label for="httpauth_password">控制台密码:</label>
+                    <input id="httpauth_password" type="password" value="" />
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-12">
+                    <button type="button" class="accordion-header" id="accordion-12-toggle" aria-expanded="false" aria-controls="accordion-12-content">
+                    <span class="accordion-title">其他</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-12-content" role="region" aria-labelledby="accordion-12-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="card-content">
+                    <div class="rows">
+                    <label for="verbose">是否开启调试日志:</label>
+                    <select id="verbose">
+                    <option value="true">true</option>
+                    <option value="false" selected>false</option>
+                    </select>
+
+                    <label for="log_file">日志路径:</label>
+                    <input id="log_file" type="text" value="xiaomusic.log.txt" />
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-13">
+                    <button type="button" class="accordion-header" id="accordion-13-toggle" aria-expanded="false" aria-controls="accordion-13-content">
+                    <span class="accordion-title">功能操作</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-13-content" role="region" aria-labelledby="accordion-13-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="button-grid">
+                    <button id="refresh_music_tag">
+                    <span class="material-icons">refresh</span>
+                    <span>刷新tag</span>
+                    </button>
+                    <button id="clear_cache">
+                    <span class="material-icons">delete_sweep</span>
+                    <span>清空缓存</span>
+                    </button>
+                    <button id="cleantempdir">
+                    <span class="material-icons">folder_delete</span>
+                    <span>清空临时目录</span>
+                    </button>
+                    <a href="/downloadlog" download="xiaomusic.txt">
+                    <button>
+                    <span class="material-icons">download</span>
+                    <span>下载日志文件</span>
+                    </button>
+                    </a>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    <section class="accordion-item" data-section="accordion-14">
+                    <button type="button" class="accordion-header" id="accordion-14-toggle" aria-expanded="false" aria-controls="accordion-14-content">
+                    <span class="accordion-title">工具链接</span>
+                    <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+                    </button>
+                    <div class="accordion-content" id="accordion-14-content" role="region" aria-labelledby="accordion-14-toggle">
+                    <div class="accordion-body setting-panel">
+                    <div class="link-grid">
+                    <a href="/docs" target="_blank" class="link-card">
+                    <div class="link-card-icon">
+                    <span class="material-icons">description</span>
+                    </div>
+                    <div class="link-card-content">
+                    <div class="link-card-title">接口文档</div>
+                    <div class="link-card-description">查看 API 接口文档</div>
+                    </div>
+                    </a>
+                    <a href="./m3u.html" target="_blank" class="link-card">
+                    <div class="link-card-icon">
+                    <span class="material-icons">swap_horiz</span>
+                    </div>
+                    <div class="link-card-content">
+                    <div class="link-card-title">m3u转换</div>
+                    <div class="link-card-description">转换 m3u 播放列表格式</div>
+                    </div>
+                    </a>
+                    <a href="./downloadtool.html" target="_blank" class="link-card">
+                    <div class="link-card-icon">
+                    <span class="material-icons">download</span>
+                    </div>
+                    <div class="link-card-content">
+                    <div class="link-card-title">歌曲下载工具</div>
+                    <div class="link-card-description">按歌单/单曲 URL 下载</div>
+                    </div>
+                    </a>
+                    <a href="/static/onlineSearch/index.html" target="_blank" class="link-card">
+                    <div class="link-card-icon">
+                    <span class="material-icons">search</span>
+                    </div>
+                    <div class="link-card-content">
+                    <div class="link-card-title">在线搜索</div>
+                    <div class="link-card-description">MusicFree / LX Server 在线音乐搜索</div>
+                    </div>
+                    </a>
+                    </div>
+                    </div>
+                    </div>
+                    </section>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="player" role="main" aria-label="音乐播放器">
+        <header class="player-header">
+            <div class="player-header-title">
+                <h1>小爱音箱播放器
+                    <a href="https://xdocs.hanxi.cc/issues/changelog.html" target="_blank" class="version-link"><span id="version">0.4.0</span><span id="versionnew" class="new-badge"></span></a>
+                </h1>
+            </div>
+            <button type="button" class="device-chip" id="device-chip" aria-haspopup="dialog" aria-controls="device-component" aria-label="选择播放设备">
+                <span class="material-icons" aria-hidden="true">speaker</span>
+                <span class="device-chip-name" id="device-chip-name">本机播放</span>
+            </button>
+        </header>
+
         <select id="did" class="device-selector" aria-label="选择播放设备">
             <option value="default">默认设备</option>
         </select>
 
-        <label for="music_list" class="label-with-action">选择播放列表:
-            <div class="option-inline" onclick="refreshlist()" role="button" aria-label="刷新播放列表" tabindex="0">
-                <span class="material-icons" aria-hidden="true">refresh</span>
-                <span class="tooltip">刷新列表</span>
+        <div class="playlist-page">
+            <div class="playlist-search">
+                <span class="material-icons" aria-hidden="true">search</span>
+                <input type="text" id="playlist-search-input" placeholder="搜索歌曲" aria-label="搜索歌曲" />
             </div>
-        </label>
-        <select id="music_list" class="playlist-selector" aria-label="选择播放列表">
-        </select>
 
-        <label for="music_name" class="label-with-action">选择歌曲:
-            <div class="action-buttons">
-                <div class="option-inline" onclick="triggerUpload()" role="button" aria-label="上传歌曲" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">file_upload</span>
-                    <span class="tooltip">上传歌曲</span>
+            <div class="playlist-columns">
+                <div class="playlist-col">
+                    <div class="playlist-col-head">
+                        <span class="playlist-col-title">播放列表</span>
+                        <span class="playlist-col-actions">
+                            <button class="icon-action" type="button" id="playlist-upload" aria-label="上传歌曲">
+                                <span class="material-icons" aria-hidden="true">file_upload</span>
+                                <span class="tooltip">上传歌曲</span>
+                            </button>
+                            <button class="icon-action" type="button" id="playlist-refresh" aria-label="刷新播放列表">
+                                <span class="material-icons" aria-hidden="true">refresh</span>
+                                <span class="tooltip">刷新列表</span>
+                            </button>
+                        </span>
+                    </div>
+                    <ul class="playlist-list" id="playlist-list" role="listbox" aria-label="播放列表"></ul>
                 </div>
-                <div class="option-inline" onclick="toggleDelete()" role="button" aria-label="删除歌曲" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">delete</span>
-                    <span class="tooltip">删除歌曲</span>
+                <div class="playlist-col">
+                    <div class="playlist-col-head" id="playlist-col-head-songs">歌曲</div>
+                    <ul class="playlist-list" id="playlist-songs" role="listbox" aria-label="歌曲列表"></ul>
                 </div>
             </div>
-        </label>
-        <select id="music_name" class="song-selector" aria-label="选择歌曲">
-        </select>
+
+            <div class="playlist-selects" aria-hidden="true">
+                <select id="music_list" class="playlist-selector" aria-label="选择播放列表" tabindex="-1"></select>
+                <select id="music_name" class="song-selector" aria-label="选择歌曲" tabindex="-1"></select>
+            </div>
+        </div>
 
         <input id="upload-file" type="file" accept=".mp3,.m4a,.wav,.flac,.aac,.ogg,.ape" class="hidden-input" />
 
-        <div id="device-audio" class="audio-section">
-            <!-- 新增：进度条点击快进 -->
-            <progress class="progress" id="progress" value="0" max="100" role="progressbar" aria-label="播放进度"
-                      aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="未播放"
-                      onclick="seekTo(event)">
-
-            </progress>
-            <div class="time-info">
-                <span class="current-time" id="current-time">0:00</span>
-                <div class="current-song" id="playering-music">当前播放歌曲：无</div>
-                <span class="duration" id="duration">00:00</span>
-            </div>
-        </div>
         <audio id="audio" controls autoplay class="hidden-audio"></audio>
 
-        <div class="buttons">
+        <div class="detached-controls" aria-hidden="true">
             <div class="player-controls button-group">
-                <div id="modeBtn" onclick="togglePlayMode()" class="control-button device-enable" role="button" aria-label="切换播放模式" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">shuffle</span>
-                    <span class="tooltip">切换播放模式</span>
-                </div>
-                <div onclick="prevTrack()" class="control-button device-enable" role="button" aria-label="上一首" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">skip_previous</span>
-                    <span class="tooltip">上一首</span>
-                </div>
-
-                <!-- 新增：快退10秒按钮 -->
-                <div id="rewindDiv" onclick="rewind()" class="control-button device-enable" role="button" aria-label="快退10秒"
-                     tabindex="0">
+                <div id="rewindDiv" class="control-button" role="button" aria-label="快退10秒" tabindex="-1">
                     <span class="material-icons" aria-hidden="true">replay_10</span>
-                    <span class="tooltip">快退10秒</span>
                 </div>
-
-                <div onclick="play()" class="control-button" role="button" aria-label="播放/暂停" tabindex="0">
-                    <span id="playPauseIcon" class="material-icons-outlined play"
-                          aria-hidden="true">play_circle_outline</span>
-                    <span class="tooltip">播放/暂停</span>
-                </div>
-
-                <!-- 新增：快进10秒按钮 -->
-                <div id="forwardDiv" onclick="forward()" class="control-button device-enable" role="button" aria-label="快进10秒"
-                     tabindex="0">
+                <div id="forwardDiv" class="control-button" role="button" aria-label="快进10秒" tabindex="-1">
                     <span class="material-icons" aria-hidden="true">forward_10</span>
-                    <span class="tooltip">快进10秒</span>
                 </div>
-
-                <!-- 新增：倍速调节按钮 -->
-                <div id="speedDiv" onclick="changePlaybackRate()" class="control-button device-enable" role="button"
-                     aria-label="调节播放速度" tabindex="0">
+                <div id="speedDiv" class="control-button" role="button" aria-label="调节播放速度" tabindex="-1">
                     <span class="material-icons" aria-hidden="true">speed</span>
-                    <!-- 这里实时显示倍速 -->
                     <span id="playbackRateText" style="font-size:12px; margin-left:3px;">1.0x</span>
-                    <span class="tooltip">倍速调节</span>
                 </div>
-
-                <div onclick="nextTrack()" class="control-button device-enable" role="button" aria-label="下一首" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">skip_next</span>
-                    <span class="tooltip">下一首</span>
-                </div>
-                <div id="stop" onclick="stopPlay()" class="control-button device-enable" role="button" aria-label="关机" tabindex="0">
+                <div id="stop" class="control-button" role="button" aria-label="关机" tabindex="-1">
                     <span class="material-icons" aria-hidden="true">stop</span>
-                    <span class="tooltip">关机</span>
-                </div>
-
-            </div>
-            <div class="mode-controls button-group">
-                <div onclick="addToFavorites()" class="favorite icon-item device-enable" role="button" aria-label="收藏歌曲" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">favorite</span>
-                    <p>收藏</p>
-                </div>
-                <div onclick="toggleVolume()" class="icon-item device-enable" role="button" aria-label="调节音量" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">volume_up</span>
-                    <p>音量</p>
-                </div>
-                <div onclick="toggleSearch()" class="icon-item device-enable" role="button" aria-label="搜索歌曲" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">search</span>
-                    <p>搜索</p>
-                </div>
-                <div onclick="toggleTimer()" class="icon-item device-enable" role="button" aria-label="定时关机" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">timer</span>
-                    <p>定时</p>
-                </div>
-                <div onclick="togglePlayLink()" class="icon-item device-enable" role="button" aria-label="播放链接测试" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">emoji_nature</span>
-                    <p>测试</p>
-                </div>
-                <div onclick="openSettings()" class="icon-item" role="button" aria-label="打开设置" tabindex="0">
-                    <span class="material-icons" aria-hidden="true">settings</span>
-                    <p>设置</p>
                 </div>
             </div>
         </div>
@@ -249,14 +794,22 @@
             <button onclick="toggleWarning()">取消</button>
         </div>
     </div>
-    <div class="footer" role="contentinfo">
-        Powered by XiaoMusic
+    <div class="component" id="device-component" role="dialog" aria-modal="true" aria-labelledby="device-title">
+        <h2 id="device-title">选择播放设备</h2>
+        <ul class="device-option-list" id="device-option-list" role="listbox" aria-label="可用播放设备"></ul>
+        <div class="component-button-one">
+            <button type="button" class="close-button" onclick="closeDeviceDialog()">关闭</button>
+        </div>
     </div>
+    <!-- 可见提示消息（Toast）：由 showToast 显示，2.5 秒后自动隐藏 -->
+    <div id="toast" class="toast" role="presentation" aria-hidden="true"></div>
 
     <!-- 屏幕阅读器状态通知区域 -->
     <div id="sr-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./md.js?version=1780982533">
+    <script src="./md.js?version=1790742200">
+    </script>
+    <script src="./setting.js?version=1790742200">
     </script>
     <script>
         // ===================== 新增功能：快进快退 + 倍速调节 =====================
@@ -306,17 +859,449 @@
         }
 
 
-        // 显示提示（修复版）
+        // 显示提示：更新可见 Toast，同时保留屏幕阅读器播报
+        let toastTimer = null;
         function showToast(msg) {
-            const tip = document.getElementById('sr-announcer');
-            tip.textContent = msg;
-            tip.style.display = 'block';
+            const toast = document.getElementById('toast');
+            const announcer = document.getElementById('sr-announcer');
 
-            // 1.5秒后自动隐藏
-            setTimeout(() => {
-                tip.style.display = 'none';
+            // 无障碍：始终更新屏幕阅读器通知区域
+            if (announcer) {
+                announcer.textContent = msg;
+            }
+
+            // 找不到可见提示元素时退回到仅播报的旧行为
+            if (!toast) {
+                return;
+            }
+
+            toast.textContent = msg;
+
+            // 悬浮在常驻播放栏上方，空间不足时退回底部，避免遮挡正在操作的按钮
+            const bar = document.querySelector('.player-bar');
+            if (bar) {
+                const gap = 20;
+                const room =
+                    bar.getBoundingClientRect().top - toast.offsetHeight - gap;
+                if (room >= gap) {
+                    toast.style.bottom = 'auto';
+                    toast.style.top = room + 'px';
+                } else {
+                    toast.style.top = 'auto';
+                    toast.style.bottom = '';
+                }
+            }
+
+            toast.classList.add('show');
+
+            // 清除上一次的定时器，避免连续点击时提前隐藏
+            if (toastTimer !== null) {
+                clearTimeout(toastTimer);
+            }
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+                toastTimer = null;
             }, 2500);
         }
+
+        // ===================== 上滑面板 =====================
+        // 面板常驻 DOM，仅靠 transform 显隐；符合 prefers-reduced-motion 时由 CSS 覆盖过渡时长。
+        (function () {
+            const PANEL_IDS = ['settings'];
+            let openId = null;
+            let lastOpener = null;
+
+            const panelEl = (id) => document.getElementById('panel-' + id);
+            const backdrop = document.getElementById('sheet-backdrop');
+
+            function applyPanelState() {
+                PANEL_IDS.forEach((id) => {
+                    const el = panelEl(id);
+                    if (!el) return;
+                    const isOpen = id === openId;
+                    el.classList.toggle('open', isOpen);
+                    document.querySelectorAll('[data-panel="' + id + '"]').forEach((btn) => {
+                        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                    });
+                });
+                if (backdrop) backdrop.classList.toggle('open', openId !== null);
+                document.body.classList.toggle('sheet-open', openId !== null);
+            }
+
+            function openPanel(id, opener) {
+                if (openId === id) return;
+                if (opener) lastOpener = opener;
+                openId = id;
+                applyPanelState();
+                const el = panelEl(id);
+                const closeBtn = el && el.querySelector('.sheet-close');
+                if (closeBtn) closeBtn.focus({ preventScroll: true });
+            }
+
+            function closePanel(restoreFocus) {
+                if (openId === null) return;
+                const opener = lastOpener;
+                openId = null;
+                applyPanelState();
+                if (restoreFocus && opener && document.contains(opener)) {
+                    opener.focus({ preventScroll: true });
+                }
+            }
+
+            function trapFocus(event) {
+                const panel = panelEl(openId);
+                if (!panel) return;
+                const focusables = Array.from(
+                    panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+                ).filter((el) => !el.disabled);
+                if (!focusables.length) return;
+                const first = focusables[0];
+                const last = focusables[focusables.length - 1];
+                if (!panel.contains(document.activeElement)) {
+                    event.preventDefault();
+                    first.focus();
+                    return;
+                }
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            }
+
+            document.querySelectorAll('[data-panel]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const id = btn.getAttribute('data-panel');
+                    if (openId === id) {
+                        closePanel(true);
+                    } else {
+                        openPanel(id, btn);
+                        if (id === 'settings' && typeof window.initSettingPanel === 'function') {
+                            window.initSettingPanel();
+                        }
+                    }
+                });
+            });
+
+            document.querySelectorAll('.sheet-close').forEach((btn) => {
+                btn.addEventListener('click', () => closePanel(true));
+            });
+
+            if (backdrop) {
+                backdrop.addEventListener('click', () => closePanel(true));
+            }
+
+            document.addEventListener('keydown', (event) => {
+                if (openId === null) return;
+                if (event.key === 'Escape') {
+                    closePanel(true);
+                } else if (event.key === 'Tab') {
+                    trapFocus(event);
+                }
+            });
+
+            window.closeAllPanels = () => closePanel(true);
+
+            // 设置内容搬入面板前，回退到独立页，避免入口失效
+            window.openSettings = () => {
+                const panel = document.getElementById('panel-settings');
+                if (panel && panel.querySelector('#setting')) {
+                    openPanel('settings');
+                    if (typeof window.initSettingPanel === 'function') {
+                        window.initSettingPanel();
+                    }
+                } else {
+                    window.location.href = 'setting.html';
+                }
+            };
+        })();
+
+        // ===================== 歌单页（默认内容区） =====================
+        // 供 md.js 在刷新列表后调用；两个 select 是数据源，这里只做展示与转发
+        (function () {
+            const listEl = document.getElementById('playlist-list');
+            const songsEl = document.getElementById('playlist-songs');
+            const songsHead = document.getElementById('playlist-col-head-songs');
+            const searchInput = document.getElementById('playlist-search-input');
+            const musicListSel = document.getElementById('music_list');
+            const musicNameSel = document.getElementById('music_name');
+            if (!listEl || !songsEl || !musicListSel || !musicNameSel) return;
+
+            let filterText = '';
+
+            const matches = (text) =>
+                !filterText || text.toLowerCase().includes(filterText.toLowerCase());
+
+            function emptyItem(text) {
+                const li = document.createElement('li');
+                li.className = 'playlist-empty';
+                li.textContent = text;
+                return li;
+            }
+
+            function makeItem(text, selected, onPick, count, onDelete) {
+                const li = document.createElement('li');
+                li.className = 'playlist-item' + (selected ? ' selected' : '');
+                li.setAttribute('role', 'option');
+                li.setAttribute('aria-selected', selected ? 'true' : 'false');
+                li.tabIndex = 0;
+
+                const span = document.createElement('span');
+                span.className = 'playlist-item-text';
+                span.textContent = text;
+                li.appendChild(span);
+
+                if (count) {
+                    const badge = document.createElement('span');
+                    badge.className = 'playlist-count';
+                    badge.textContent = count;
+                    li.appendChild(badge);
+                }
+
+                if (onDelete) {
+                    const del = document.createElement('button');
+                    del.type = 'button';
+                    del.className = 'playlist-item-delete';
+                    del.setAttribute('aria-label', '删除歌曲 ' + text);
+                    del.innerHTML = '<span class="material-icons" aria-hidden="true">delete</span>';
+                    del.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        onDelete();
+                    });
+                    li.appendChild(del);
+                }
+
+                li.addEventListener('click', onPick);
+                li.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onPick();
+                    }
+                });
+                return li;
+            }
+
+            function renderPlaylists() {
+                const current = musicListSel.value;
+                const options = Array.from(musicListSel.options);
+                listEl.textContent = '';
+
+                const visible = options.filter((opt) => matches(opt.text));
+                if (!visible.length) {
+                    listEl.appendChild(
+                        emptyItem(options.length ? '没有匹配的播放列表' : '暂无播放列表')
+                    );
+                    return;
+                }
+
+                visible.forEach((opt) => {
+                    const label = opt.text.replace(/\s*\(\d+\)\s*$/, '');
+                    const countMatch = opt.text.match(/\((\d+)\)\s*$/);
+                    listEl.appendChild(
+                        makeItem(
+                            label,
+                            opt.value === current,
+                            () => {
+                                musicListSel.value = opt.value;
+                                musicListSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                renderPlaylists();
+                                renderSongs();
+                            },
+                            countMatch ? countMatch[1] : ''
+                        )
+                    );
+                });
+            }
+
+            function renderSongs() {
+                const current = musicNameSel.value;
+                const options = Array.from(musicNameSel.options);
+                songsEl.textContent = '';
+
+                if (songsHead) {
+                    const selectedOpt = musicListSel.options[musicListSel.selectedIndex];
+                    songsHead.textContent = selectedOpt
+                        ? selectedOpt.text.replace(/\s*\(\d+\)\s*$/, '')
+                        : '歌曲';
+                }
+
+                const visible = options.filter((opt) => matches(opt.value));
+                if (!visible.length) {
+                    songsEl.appendChild(
+                        emptyItem(options.length ? '没有匹配的歌曲' : '暂无歌曲')
+                    );
+                    return;
+                }
+
+                visible.forEach((opt) => {
+                    songsEl.appendChild(
+                        makeItem(
+                            opt.value,
+                            opt.value === current,
+                            () => {
+                                musicNameSel.value = opt.value;
+                                musicNameSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                renderSongs();
+                            },
+                            '',
+                            () => {
+                                musicNameSel.value = opt.value;
+                                musicNameSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                if (typeof toggleDelete === 'function') toggleDelete();
+                            }
+                        )
+                    );
+                });
+            }
+
+            $(musicListSel).on('change', () => {
+                renderPlaylists();
+                renderSongs();
+            });
+            $(musicNameSel).on('change', () => {
+                renderSongs();
+                renderPlaylists();
+            });
+
+            if (searchInput) {
+                searchInput.addEventListener('input', () => {
+                    filterText = searchInput.value.trim();
+                    renderPlaylists();
+                    renderSongs();
+                });
+            }
+
+            const refreshBtn = document.getElementById('playlist-refresh');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    if (typeof refreshlist === 'function') refreshlist();
+                });
+            }
+
+            const uploadBtn = document.getElementById('playlist-upload');
+            if (uploadBtn) {
+                uploadBtn.addEventListener('click', () => {
+                    if (typeof triggerUpload === 'function') triggerUpload();
+                });
+            }
+
+            renderPlaylists();
+            renderSongs();
+        })();
+
+        (function () {
+            const chip = document.getElementById('device-chip');
+            const chipName = document.getElementById('device-chip-name');
+            const sel = document.getElementById('did');
+            const optionList = document.getElementById('device-option-list');
+            if (!chip || !sel || !optionList) return;
+
+            function syncChipLabel() {
+                if (!chipName) return;
+                const opt = sel.options[sel.selectedIndex];
+                const label = opt ? opt.textContent.trim() : '';
+                chipName.textContent = label || '本机播放';
+            }
+
+            function renderDeviceOptions() {
+                optionList.textContent = '';
+                const options = Array.from(sel.options);
+                const realDevices = options.filter(
+                    (o) => o.value && o.value !== 'default'
+                );
+
+                if (!realDevices.length) {
+                    const li = document.createElement('li');
+                    li.className = 'device-empty';
+                    li.textContent = '没有可选播放设备';
+                    optionList.appendChild(li);
+                    return;
+                }
+
+                realDevices.forEach((opt) => {
+                    const li = document.createElement('li');
+                    li.className = 'device-option' + (opt.value === sel.value ? ' selected' : '');
+                    li.setAttribute('role', 'option');
+                    li.setAttribute('aria-selected', opt.value === sel.value ? 'true' : 'false');
+                    li.tabIndex = 0;
+
+                    const icon = document.createElement('span');
+                    icon.className = 'material-icons';
+                    icon.setAttribute('aria-hidden', 'true');
+                    icon.textContent = opt.value === 'web_device' ? 'computer' : 'speaker';
+                    li.appendChild(icon);
+
+                    const name = document.createElement('span');
+                    name.textContent = opt.textContent.trim();
+                    li.appendChild(name);
+
+                    li.addEventListener('click', () => {
+                        sel.value = opt.value;
+                        sel.dispatchEvent(new Event('change', { bubbles: true }));
+                        syncChipLabel();
+                        if (typeof closeDeviceDialog === 'function') closeDeviceDialog();
+                    });
+                    li.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            li.click();
+                        }
+                    });
+                    optionList.appendChild(li);
+                });
+            }
+
+            window.openDeviceDialog = function () {
+                renderDeviceOptions();
+                if (typeof openDialog === 'function') {
+                    openDialog('device-component');
+                }
+            };
+
+            window.closeDeviceDialog = function () {
+                if (typeof closeDialog === 'function') {
+                    closeDialog('device-component');
+                }
+            };
+
+            chip.addEventListener('click', () => {
+                window.openDeviceDialog();
+            });
+
+            $(sel).on('change', syncChipLabel);
+            syncChipLabel();
+
+            const observer = new MutationObserver(() => {
+                syncChipLabel();
+            });
+            observer.observe(sel, { childList: true });
+        })();
+
+        (function () {
+            const bar = document.querySelector('.player-bar');
+            if (!bar) return;
+
+            const syncBarHeight = () => {
+                const h = Math.round(bar.getBoundingClientRect().height);
+                if (h > 0) {
+                    document.documentElement.style.setProperty('--player-bar-height', h + 'px');
+                }
+            };
+
+            syncBarHeight();
+            window.addEventListener('resize', syncBarHeight);
+
+            if (typeof ResizeObserver === 'function') {
+                new ResizeObserver(syncBarHeight).observe(bar);
+            } else {
+                window.addEventListener('load', syncBarHeight);
+                if (document.fonts && document.fonts.ready) {
+                    document.fonts.ready.then(syncBarHeight);
+                }
+            }
+        })();
 
     </script>
 </body>

@@ -798,131 +798,171 @@ let no_warning = localStorage.getItem("no-warning");
 // 全局 did 变量初始化，默认为本机播放
 var did = localStorage.getItem("cur_did") || "web_device";
 
-// 拉取现有配置
-$.get("/getsetting", function (data, status) {
-  console.log(data, status);
-  localStorage.setItem("mi_did", data.mi_did);
+// 本机播放器是否已初始化（initWebPlayer 绑定 audio 事件监听，重复调用会叠加）
+var webPlayerInitialized = false;
 
-  did = localStorage.getItem("cur_did") || "web_device";
-  var dids = [];
-  if (data.mi_did != null) {
-    dids = data.mi_did.split(",");
+// mi_did 仅在设置页勾选设备后才有值；devices 始终反映已登录设备，故优先取它
+function collectDeviceDids(settingData) {
+  var deviceKeys = Object.keys(settingData.devices || {});
+  if (deviceKeys.length > 0) {
+    return deviceKeys;
   }
-  console.log("cur_did", did);
-  console.log("dids", dids);
-
-  // 如果当前 did 不是 web_device，且配置了设备列表，但 did 不在列表中，则使用第一个设备
-  if (did != "web_device" && dids.length > 0 && !dids.includes(did)) {
-    did = dids[0];
-    localStorage.setItem("cur_did", did);
-  }
-
-  // 如果 did 仍然为空或未设置，默认使用 web_device
-  if (!did || did === "") {
-    did = "web_device";
-    localStorage.setItem("cur_did", did);
-  }
-
-  window.did = did;
-  $.get(`/getvolume?did=${did}`, function (data, status) {
-    console.log(data, status, data["volume"]);
-    $("#volume").val(data.volume);
-  });
-  refresh_music_list();
-
-  $("#did").empty();
-  var dids = data.mi_did.split(",");
-
-  // 收集所有设备选项
-  var deviceOptions = [];
-  $.each(dids, function (index, value) {
-    var cur_device = Object.values(data.devices).find(
-      (device) => device.did === value,
-    );
-
-    if (cur_device) {
-      deviceOptions.push({
-        value: value,
-        text: cur_device.name,
+  if (settingData.mi_did) {
+    return String(settingData.mi_did)
+      .split(",")
+      .filter(function (v) {
+        return v;
       });
+  }
+  return [];
+}
 
-      if (value === did) {
-        playModeIndex = cur_device.play_type;
-        console.log(
-          "%c当前设备播放模式: ",
-          "color: #007acc;",
-          cur_device.play_type,
-        );
-        togglePlayMode(false);
-      }
-    }
-  });
+// 拉取现有配置
+function reinitForDevice() {
+  $.get("/getsetting", function (data, status) {
+    console.log(data, status);
+    localStorage.setItem("mi_did", data.mi_did);
 
-  // 添加本机选项
-  deviceOptions.push({
-    value: "web_device",
-    text: "本机",
-  });
-  // 批量填充设备选项
-  fillSelectOptions(
-    "#did",
-    deviceOptions,
-    did,
-    `设备列表已加载，共 ${deviceOptions.length} 个设备`,
-  );
-
-  console.log("cur_did", did);
-  $("#did").change(function () {
-    did = $(this).val();
-    localStorage.setItem("cur_did", did);
-    window.did = did;
+    did = localStorage.getItem("cur_did") || "web_device";
+    var dids = collectDeviceDids(data);
     console.log("cur_did", did);
-    location.reload();
-  });
+    console.log("dids", dids);
 
-  if (did == "web_device") {
-    // 本机播放：显示 audio 控件和进度条
-    $("#audio").fadeIn();
-    $("#device-audio").fadeIn(); // 保持显示，因为进度条在这里
+    // 如果当前 did 不是 web_device，且配置了设备列表，但 did 不在列表中，则使用第一个设备
+    if (did != "web_device" && dids.length > 0 && !dids.includes(did)) {
+      did = dids[0];
+      localStorage.setItem("cur_did", did);
+    }
 
-    //本机播放隐藏关机按钮
-    $('#stop').hide();
-    // 本机播放：禁用设备相关按钮，启用本机按钮
-    // 搜索、定时、测试按钮禁用
-    $(".icon-item").each(function () {
-      const text = $(this).find("p").text();
-      if (text === "搜索" || text === "定时" || text === "测试") {
-        $(this).addClass("disabled");
-        $(this).css("opacity", "0.5");
-        $(this).css("pointer-events", "none");
+    // 如果 did 仍然为空或未设置，默认使用 web_device
+    if (!did || did === "") {
+      did = "web_device";
+      localStorage.setItem("cur_did", did);
+    }
+
+    window.did = did;
+
+    // 切到本机播放时，先断开设备 WebSocket 并清空进度状态，避免旧设备的推送污染进度条
+    if (did == "web_device") {
+      cleanupWebSocket();
+      currentDid = null;
+      offset = 0;
+      duration = 0;
+      isPlaying = false;
+      updateProgressUI();
+    }
+
+    $.get(`/getvolume?did=${did}`, function (data, status) {
+      console.log(data, status, data["volume"]);
+      $("#volume").val(data.volume);
+    });
+    refresh_music_list();
+
+    $("#did").empty();
+    var dids = collectDeviceDids(data);
+
+    // 收集所有设备选项
+    var deviceOptions = [];
+    $.each(dids, function (index, value) {
+      var cur_device = Object.values(data.devices).find(
+        (device) => device.did === value,
+      );
+
+      if (cur_device) {
+        deviceOptions.push({
+          value: value,
+          text: cur_device.name,
+        });
+
+        if (value === did) {
+          playModeIndex = cur_device.play_type;
+          console.log(
+            "%c当前设备播放模式: ",
+            "color: #007acc;",
+            cur_device.play_type,
+          );
+          togglePlayMode(false);
+        }
       }
     });
 
-    // 其他按钮启用（播放模式、上一曲、播放、下一曲、停止、收藏、音量、设置）
-    $("#modeBtn").removeClass("disabled");
-    $(".favorite").removeClass("disabled");
-  } else {
-    // 设备播放：隐藏 audio 控件，显示进度条
-    $("#audio").fadeOut();
-    $("#device-audio").fadeIn();
+    // 添加本机选项
+    deviceOptions.push({
+      value: "web_device",
+      text: "本机",
+    });
+    // 批量填充设备选项
+    fillSelectOptions(
+      "#did",
+      deviceOptions,
+      did,
+      `设备列表已加载，共 ${deviceOptions.length} 个设备`,
+    );
 
-    // 设备播放：恢复所有按钮
-    $(".device-enable").removeClass("disabled");
-    $(".icon-item").removeClass("disabled");
-    $(".icon-item").css("opacity", "");
-    $(".icon-item").css("pointer-events", "");
+    console.log("cur_did", did);
 
-    //设备播放隐藏快进快退倍速按钮
-     $("#speedDiv").hide();
-     $("#rewindDiv").hide();
-     $("#forwardDiv").hide();
+    if (did == "web_device") {
+      // 本机播放：显示 audio 控件和进度条
+      $("#audio").fadeIn();
+      $("#device-audio").fadeIn(); // 保持显示，因为进度条在这里
 
+      //本机播放隐藏关机按钮
+      $('#stop').hide();
+      // 本机播放：禁用设备相关按钮，启用本机按钮
+      // 搜索、定时、测试按钮禁用
+      $(".icon-item").each(function () {
+        const text = $(this).find("p").text();
+        if (text === "搜索" || text === "定时" || text === "测试") {
+          $(this).addClass("disabled");
+          $(this).css("opacity", "0.5");
+          $(this).css("pointer-events", "none");
+        }
+      });
 
-  }
+      // 其他按钮启用（播放模式、上一曲、播放、下一曲、停止、收藏、音量、设置）
+      $("#modeBtn").removeClass("disabled");
+      $(".favorite").removeClass("disabled");
 
-  // 初始化对话记录开关状态
-  updatePullAskUI(data.enable_pull_ask);
+      // 首次进入本机播放时初始化 WebPlayer（绑定 audio 事件监听，只能执行一次）
+      if (!webPlayerInitialized && typeof initWebPlayer === "function") {
+        initWebPlayer();
+        webPlayerInitialized = true;
+      }
+
+      const webSavedMode = WebPlayer.getPlayMode();
+      $("#modeBtn .material-icons").text(playModes[webSavedMode].icon);
+      $("#modeBtn .tooltip").text(playModes[webSavedMode].cmd);
+    } else {
+      // 设备播放：隐藏 audio 控件，显示进度条
+      $("#audio").fadeOut();
+      $("#device-audio").fadeIn();
+
+      // 设备播放：恢复所有按钮
+      $(".device-enable").removeClass("disabled");
+      $(".icon-item").removeClass("disabled");
+      $(".icon-item").css("opacity", "");
+      $(".icon-item").css("pointer-events", "");
+
+      //设备播放隐藏快进快退倍速按钮
+       $("#speedDiv").hide();
+       $("#rewindDiv").hide();
+       $("#forwardDiv").hide();
+    }
+
+    // 初始化对话记录开关状态
+    updatePullAskUI(data.enable_pull_ask);
+  });
+}
+
+$("#did").on("change", function () {
+  did = $(this).val();
+  localStorage.setItem("cur_did", did);
+  window.did = did;
+  console.log("cur_did", did);
+  reinitForDevice();
 });
+
+reinitForDevice();
 
 function compareVersion(version1, version2) {
   const v1 = version1.split(".").map(Number);
@@ -979,7 +1019,7 @@ function _refresh_music_list(callback) {
       `播放列表已加载，共 ${playlistOptions.length} 个列表`,
     );
 
-    $("#music_list").change(function () {
+    $("#music_list").off("change.mlRefresh").on("change.mlRefresh", function () {
       const selectedValue = $(this).val();
       localStorage.setItem("cur_playlist", selectedValue);
       $("#music_name").empty();
@@ -1024,7 +1064,7 @@ function _refresh_music_list(callback) {
     });
 
     // 监听歌曲选择变化（本机播放）
-    $("#music_name").on("change", function () {
+    $("#music_name").off("change.mnRefresh").on("change.mnRefresh", function () {
       var did = $("#did").val();
       if (did == "web_device") {
         const selectedMusic = $(this).val();
@@ -1094,22 +1134,27 @@ function _refresh_music_list(callback) {
 // 拉取播放列表
 function refresh_music_list() {
   // 刷新列表时清空并临时禁用搜索框
+  // 搜索组件可能不在当前 DOM（面板化/懒加载），此时跳过搜索框处理但继续刷新列表
   const searchInput = document.getElementById("search");
-  const oriPlaceHolder = searchInput.placeholder;
-  const oriValue = searchInput.value;
+  const oriPlaceHolder = searchInput ? searchInput.placeholder : null;
+  const oriValue = searchInput ? searchInput.value : null;
   const inputEvent = new Event("input", { bubbles: true });
-  searchInput.value = "";
-  // 分发事件，让其他控件改变状态
-  searchInput.dispatchEvent(inputEvent);
-  searchInput.disabled = true;
-  searchInput.placeholder = "请等待...";
+  if (searchInput) {
+    searchInput.value = "";
+    // 分发事件，让其他控件改变状态
+    searchInput.dispatchEvent(inputEvent);
+    searchInput.disabled = true;
+    searchInput.placeholder = "请等待...";
+  }
 
   _refresh_music_list(() => {
     // 刷新完成再启用
-    searchInput.disabled = false;
-    searchInput.value = oriValue;
-    searchInput.dispatchEvent(inputEvent);
-    searchInput.placeholder = oriPlaceHolder;
+    if (searchInput) {
+      searchInput.disabled = false;
+      searchInput.value = oriValue;
+      searchInput.dispatchEvent(inputEvent);
+      searchInput.placeholder = oriPlaceHolder;
+    }
     // 获取下正在播放的音乐
     if (did != "web_device") {
       connectWebSocket(did);
@@ -1338,13 +1383,6 @@ function sendcmd(cmd) {
       if (cmd == "刷新列表") {
         check_status_refresh_music_list(3); // 最多重试3次
       }
-      if (
-        ["全部循环", "单曲循环", "随机播放", "单曲播放", "顺序播放"].includes(
-          cmd,
-        )
-      ) {
-        location.reload();
-      }
     },
     error: () => {
       // 请求失败时执行的操作
@@ -1367,6 +1405,11 @@ function handleSearch() {
   const searchInput = document.getElementById("search");
   const resultsContainer = document.getElementById("music-name");
   const musicFilenameInput = document.getElementById("music-filename");
+
+  // 本函数在顶层被调用，缺元素时抛错会中断后续所有顶层语句，故必须先判空
+  if (!searchInput || !resultsContainer || !musicFilenameInput) {
+    return;
+  }
 
   searchInput.addEventListener(
     "input",

@@ -100,13 +100,16 @@ class Config:
     public_port: int = int(os.getenv("XIAOMUSIC_PUBLIC_PORT", 58090))  # 歌曲访问端口
     proxy: str = os.getenv("XIAOMUSIC_PROXY", None)
     loudnorm: str = os.getenv("XIAOMUSIC_LOUDNORM", None)  # 均衡音量参数
+    search_prefix: str = os.getenv(
+        "XIAOMUSIC_SEARCH", "bilisearch:"
+    )  # "bilisearch:" or "ytsearch:"
     ffmpeg_location: str = os.getenv("XIAOMUSIC_FFMPEG_LOCATION", "./ffmpeg/bin")
     get_duration_type: str = os.getenv(
         "XIAOMUSIC_GET_DURATION_TYPE", "ffprobe"
     )  # mutagen or ffprobe
     active_cmd: str = os.getenv(
         "XIAOMUSIC_ACTIVE_CMD",
-        "play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music",
+        "play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music,online_play,singer_play,online_playlist_play",
     )
     exclude_dirs: str = os.getenv("XIAOMUSIC_EXCLUDE_DIRS", "@eaDir,tmp")
     ignore_tag_dirs: str = os.getenv("XIAOMUSIC_IGNORE_TAG_DIRS", "")
@@ -116,7 +119,12 @@ class Config:
     )
     httpauth_username: str = os.getenv("XIAOMUSIC_HTTPAUTH_USERNAME", "")
     httpauth_password: str = os.getenv("XIAOMUSIC_HTTPAUTH_PASSWORD", "")
+    music_list_url: str = os.getenv("XIAOMUSIC_MUSIC_LIST_URL", "")
+    music_list_json: str = os.getenv("XIAOMUSIC_MUSIC_LIST_JSON", "")
     custom_play_list_json: str = os.getenv("XIAOMUSIC_CUSTOM_PLAY_LIST_JSON", "")
+    disable_download: bool = (
+        os.getenv("XIAOMUSIC_DISABLE_DOWNLOAD", "false").lower() == "true"
+    )
     key_word_dict: dict[str, str] = field(default_factory=default_key_word_dict)
     key_match_order: list[str] = field(default_factory=default_key_match_order)
     use_music_api: bool = (
@@ -150,6 +158,15 @@ class Config:
         "XIAOMUSIC_KEYWORDS_PLAYLOCAL", "播放本地歌曲,本地播放歌曲"
     )
     keywords_play: str = os.getenv("XIAOMUSIC_KEYWORDS_PLAY", "播放歌曲,放歌曲")
+    keywords_online_play: str = os.getenv(
+        "XIAOMUSIC_KEYWORDS_ONLINE_PLAY", "在线播放,搜索歌曲"
+    )
+    keywords_online_playlist_play: str = os.getenv(
+        "XIAOMUSIC_KEYWORDS_ONLINE_PLAYLIST", "在线歌单,搜索歌单"
+    )
+    keywords_singer_play: str = os.getenv(
+        "XIAOMUSIC_KEYWORDS_SINGER_PLAY", "播放歌手,搜索歌手"
+    )
     keywords_stop: str = os.getenv(
         "XIAOMUSIC_KEYWORDS_STOP", "关机,暂停,停止,停止播放,关闭,退出,关掉音乐"
     )
@@ -173,11 +190,17 @@ class Config:
     delay_sec: int = int(os.getenv("XIAOMUSIC_DELAY_SEC", 0))  # 下一首歌延迟播放秒数
     continue_play: bool = os.getenv("XIAOMUSIC_CONTINUE_PLAY", "true").lower() == "true"
     pull_ask_sec: int = int(os.getenv("XIAOMUSIC_PULL_ASK_SEC", "1"))
+    token_refresh_sec: int = int(
+        os.getenv("XIAOMUSIC_TOKEN_REFRESH_SEC", "0")
+    )
     enable_pull_ask: bool = (
         os.getenv("XIAOMUSIC_ENABLE_PULL_ASK", "true").lower() == "true"
     )
     enable_save_tag: bool = (
         os.getenv("XIAOMUSIC_ENABLE_SAVE_TAG", "false").lower() == "true"
+    )
+    enable_yt_dlp_cookies: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_YT_DLP_COOKIES", "false").lower() == "true"
     )
     get_ask_by_mina: bool = (
         os.getenv("XIAOMUSIC_GET_ASK_BY_MINA", "false").lower() == "true"
@@ -197,12 +220,19 @@ class Config:
     play_type_seq_tts_msg: str = os.getenv(
         "XIAOMUSIC_PLAY_TYPE_SEQ_TTS_MSG", "已经设置为顺序播放"
     )
+    search_prompt_audio: str = os.getenv(
+        "XIAOMUSIC_SEARCH_PROMPT_AUDIO", "xiaomusic_ok.mp3"
+    )
     recently_added_playlist_len: int = int(
         os.getenv("XIAOMUSIC_RECENTLY_ADDED_PLAYLIST_LEN", "50")
     )
     # 开启语音删除歌曲
     enable_cmd_del_music: bool = (
         os.getenv("XIAOMUSIC_ENABLE_CMD_DEL_MUSIC", "false").lower() == "true"
+    )
+    # 网络歌曲使用proxy
+    web_music_proxy: bool = (
+        os.getenv("XIAOMUSIC_WEB_MUSIC_PROXY", "true").lower() == "true"
     )
     edge_tts_voice: str = os.getenv("XIAOMUSIC_EDGE_TTS_VOICE", "")
     # 是否启用定时清理临时文件
@@ -228,6 +258,9 @@ class Config:
         self.key_word_dict = default_key_word_dict()
         self.append_keyword(self.keywords_playlocal, "playlocal")
         self.append_keyword(self.keywords_play, "play")
+        self.append_keyword(self.keywords_online_play, "online_play")
+        self.append_keyword(self.keywords_online_playlist_play, "online_playlist_play")
+        self.append_keyword(self.keywords_singer_play, "singer_play")
         self.append_keyword(self.keywords_stop, "stop")
         self.append_keyword(self.keywords_playlist, "play_music_list")
         self.append_user_keyword()
@@ -334,6 +367,13 @@ class Config:
         if not os.path.exists(cache_path):
             os.makedirs(cache_path)
         return cache_path
+
+    @property
+    def yt_dlp_cookies_path(self):
+        if not os.path.exists(self.conf_path):
+            os.makedirs(self.conf_path)
+        cookies_path = os.path.join(self.conf_path, "yt-dlp-cookie.txt")
+        return cookies_path
 
     @property
     def temp_dir(self):

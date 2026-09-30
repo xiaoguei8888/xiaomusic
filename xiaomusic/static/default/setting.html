@@ -19,7 +19,7 @@
         <div class="header-inner">
             <h2>
                 <span>小爱音箱设置面板</span>
-                (<a id="version" href="https://xdocs.hanxi.cc/issues/changelog.html" target="_blank">版本未知</a>)
+                (<a id="setting-version" href="https://xdocs.hanxi.cc/issues/changelog.html" target="_blank">版本未知</a>)
             </h2>
             <div class="header-buttons">
                 <button onclick="location.href = '/static/default/index.html'" aria-label="返回首页">
@@ -35,110 +35,91 @@
     </div>
 
     <div class="setting-container" id="setting" role="main">
-        <div class="setting-card setting-panel">
-            <div class="card-content">
-                <label for="mi_did">*勾选设备(至少勾选1个):</label>
-                <button class="option-inline mini-button" id="update-devices">获取设备列表(没自动更新时使用)</button>
-                <div id="mi_did" class="device-selection"></div>
-            </div>
-        </div>
-
-        <div class="setting-card setting-panel">
-            <h3 class="card-title">基础设置</h3>
-            <div class="card-content">
-                <!-- Tab 导航 -->
-                <div class="auth-tabs" role="tablist" aria-label="登录方式选择">
-                    <button class="auth-tab-button active" data-tab="account-password" role="tab" aria-selected="true"
-                        aria-controls="tab-account-password">
-                        <span class="material-icons" aria-hidden="true">account_circle</span>
-                        <span>账号密码登录</span>
-                    </button>
-                    <button class="auth-tab-button" data-tab="cookie" role="tab" aria-selected="false"
-                        aria-controls="tab-cookie">
-                        <span class="material-icons" aria-hidden="true">cookie</span>
-                        <span>Cookie 登录</span>
-                    </button>
-                </div>
-
-                <!-- Tab 内容区域 -->
-                <div class="auth-tab-panels">
-                    <!-- 账号密码登录面板 -->
-                    <div class="auth-tab-content active" id="tab-account-password" role="tabpanel"
-                        aria-labelledby="account-password-tab">
-                        <div class="rows">
-                            <div class="form-item">
-                                <label for="account">*小米账号:</label>
-                                <input id="account" type="text" placeholder="填写小米登录账号" aria-required="true" />
-                            </div>
-
-                            <div class="form-item">
-                                <label for="password">*小米密码:</label>
-                                <input id="password" type="password" placeholder="填写小米登录密码" aria-required="true" />
-                            </div>
-                        </div>
+        <section class="accordion-item" data-section="accordion-1">
+            <button type="button" class="accordion-header" id="accordion-1-toggle" aria-expanded="false" aria-controls="accordion-1-content">
+                <span class="accordion-title">设备选择</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-1-content" role="region" aria-labelledby="accordion-1-toggle">
+                <div class="accordion-body">
+                    <div class="card-content">
+                        <label for="mi_did">*勾选设备(至少勾选1个):</label>
+                        <button class="option-inline mini-button" id="update-devices">获取设备列表(没自动更新时使用)</button>
+                        <div id="mi_did" class="device-selection"></div>
                     </div>
-
-                    <!-- Cookie 登录面板 -->
-                    <div class="auth-tab-content" id="tab-cookie" role="tabpanel" aria-labelledby="cookie-tab">
+                </div>
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-2">
+            <button type="button" class="accordion-header" id="accordion-2-toggle" aria-expanded="false" aria-controls="accordion-2-content">
+                <span class="accordion-title">账号登录</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-2-content" role="region" aria-labelledby="accordion-2-toggle">
+                <div class="accordion-body">
+                    <div class="card-content">
                         <div class="rows">
                             <div class="form-item">
-                                <label for="cookie">*Cookie:<a href="https://xdocs.hanxi.cc/issues/688.html"
-                                        target="_blank">文档</a></label>
-                                <input id="cookie" type="text" placeholder="粘贴完整的 Cookie 字符串" aria-required="true" />
+                                <label for="login-status">登录状态:</label>
+                                <div id="login-status" class="login-status">检测中…</div>
+                            </div>
+                            <div class="form-item">
+                                <label>用米家 App 扫描二维码登录:</label>
+                                <div id="qrcode-box" style="display:none; text-align:center;">
+                                    <img id="qrcode-img" alt="登录二维码"
+                                        style="width:220px;height:220px;background:#fff;padding:8px;border:1px solid #ddd;border-radius:8px;" />
+                                    <div id="qrcode-status" style="margin-top:8px;color:#666;">正在获取二维码…</div>
+                                </div>
+                                <button class="option-inline mini-button" id="show-qrcode" type="button">
+                                    <span class="material-icons" aria-hidden="true">qr_code</span>
+                                    <span>刷新二维码</span>
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-3">
+            <button type="button" class="accordion-header" id="accordion-3-toggle" aria-expanded="false" aria-controls="accordion-3-content">
+                <span class="accordion-title">服务地址</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-3-content" role="region" aria-labelledby="accordion-3-toggle">
+                <div class="accordion-body">
+                    <div class="card-content">
+                        <div class="rows">
+                            <div class="form-item">
+                                <label for="hostname" class="setting-label">*NAS的IP或域名:
+                                    <button class="option-inline mini-button" id="auto-hostname" aria-label="自动填写主机名">
+                                        <span class="material-icons" aria-hidden="true">auto_fix_high</span>
+                                        <span>自动填</span>
+                                    </button>
+                                </label>
+                                <input id="hostname" type="text" aria-required="true" />
+                            </div>
 
-                <!-- 公共配置项 -->
-                <div class="rows" style="margin-top: 20px">
-                    <div class="form-item">
-                        <label for="hostname" class="setting-label">*NAS的IP或域名:
-                            <button class="option-inline mini-button" id="auto-hostname" aria-label="自动填写主机名">
-                                <span class="material-icons" aria-hidden="true">auto_fix_high</span>
-                                <span>自动填</span>
-                            </button>
-                        </label>
-                        <input id="hostname" type="text" aria-required="true" />
-                    </div>
-
-                    <div class="form-item">
-                        <label for="public_port" class="setting-label">*本地端口:
-                            <button class="option-inline mini-button" id="auto-port" aria-label="自动填写端口">
-                                <span class="material-icons" aria-hidden="true">auto_fix_high</span>
-                                <span>自动填</span>
-                            </button>
-                        </label>
-                        <input id="public_port" type="number" value="58090" aria-required="true" />
+                            <div class="form-item">
+                                <label for="public_port" class="setting-label">*本地端口:
+                                    <button class="option-inline mini-button" id="auto-port" aria-label="自动填写端口">
+                                        <span class="material-icons" aria-hidden="true">auto_fix_high</span>
+                                        <span>自动填</span>
+                                    </button>
+                                </label>
+                                <input id="public_port" type="number" value="58090" aria-required="true" />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <div class="advanced-config-toggle" id="advancedConfigToggle" role="button" aria-expanded="false"
-            aria-controls="advancedConfigContent" tabindex="0">
-            <span>⚠️</span>
-            <span class="advanced-config-toggle-text">以下为高级配置，请谨慎修改，错误配置可能影响系统运行</span>
-            <span class="advanced-config-toggle-icon">▼</span>
-        </div>
-
-        <div class="advanced-config-content" id="advancedConfigContent">
-            <div class="config-tabs" role="tablist" aria-label="高级配置分类">
-                <button type="button" class="config-tab-button active" data-tab="filepath" role="tab" aria-selected="true" aria-controls="tab-filepath">文件路径</button>
-                <button type="button" class="config-tab-button" data-tab="filewatch" role="tab" aria-selected="false" aria-controls="tab-filewatch">文件监控</button>
-                <button type="button" class="config-tab-button" data-tab="playback" role="tab" aria-selected="false" aria-controls="tab-playback">播放控制</button>
-                <button type="button" class="config-tab-button" data-tab="search" role="tab" aria-selected="false" aria-controls="tab-search">搜索匹配</button>
-                <button type="button" class="config-tab-button" data-tab="audio" role="tab" aria-selected="false" aria-controls="tab-audio">音频处理</button>
-                <button type="button" class="config-tab-button" data-tab="tts" role="tab" aria-selected="false" aria-controls="tab-tts">语音TTS</button>
-                <button type="button" class="config-tab-button" data-tab="voicecmd" role="tab" aria-selected="false" aria-controls="tab-voicecmd">语音命令</button>
-                <button type="button" class="config-tab-button" data-tab="network" role="tab" aria-selected="false" aria-controls="tab-network">网络下载</button>
-                <button type="button" class="config-tab-button" data-tab="device" role="tab" aria-selected="false" aria-controls="tab-device">设备对话</button>
-                <button type="button" class="config-tab-button" data-tab="playlist" role="tab" aria-selected="false" aria-controls="tab-playlist">歌单定时</button>
-                <button type="button" class="config-tab-button" data-tab="security" role="tab" aria-selected="false" aria-controls="tab-security">安全访问</button>
-                <button type="button" class="config-tab-button" data-tab="other" role="tab" aria-selected="false" aria-controls="tab-other">其他</button>
-            </div>
-            <div class="config-tab-panels">
-                <div class="config-tab-content setting-panel active" id="tab-filepath" role="tabpanel">
+        </section>
+        <section class="accordion-item" data-section="accordion-4">
+            <button type="button" class="accordion-header" id="accordion-4-toggle" aria-expanded="false" aria-controls="accordion-4-content">
+                <span class="accordion-title">音乐库与缓存</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-4-content" role="region" aria-labelledby="accordion-4-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="music_path">音乐目录:</label>
@@ -161,27 +142,6 @@
 
                         <label for="ffmpeg_location">ffmpeg路径:</label>
                         <input id="ffmpeg_location" type="text" value="./ffmpeg/bin" />
-                    </div>
-                    </div>
-                </div>
-
-                <div class="config-tab-content setting-panel" id="tab-filewatch" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="enable_file_watch">启用目录监控(自动刷新音乐列表):</label>
-                        <select id="enable_file_watch">
-                            <option value="true">开启</option>
-                            <option value="false" selected>关闭</option>
-                        </select>
-
-                        <label for="file_watch_debounce">刷新列表延迟时间(秒):</label>
-                        <input id="file_watch_debounce" type="number" value="10" />
-
-                        <label for="enable_auto_clean_temp">启用定时清理临时文件(每日凌晨3点):</label>
-                        <select id="enable_auto_clean_temp">
-                            <option value="true" selected>开启</option>
-                            <option value="false">关闭</option>
-                        </select>
 
                         <label for="exclude_dirs">忽略目录(逗号分割):</label>
                         <input id="exclude_dirs" type="text" value="@eaDir,tmp" />
@@ -194,11 +154,24 @@
 
                         <label for="recently_added_playlist_len">最近新增的歌曲数量:</label>
                         <input id="recently_added_playlist_len" type="number" value="50" />
+
+                        <label for="enable_auto_clean_temp">启用定时清理临时文件(每日凌晨3点):</label>
+                        <select id="enable_auto_clean_temp">
+                            <option value="true" selected>开启</option>
+                            <option value="false">关闭</option>
+                        </select>
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-playback" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-5">
+            <button type="button" class="accordion-header" id="accordion-5-toggle" aria-expanded="false" aria-controls="accordion-5-content">
+                <span class="accordion-title">播放控制</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-5-content" role="region" aria-labelledby="accordion-5-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="delay_sec">下一首歌延迟播放秒数(支持负数):</label>
@@ -240,17 +213,21 @@
                             <img id="cover_preview" src="" style="width: 64px; height: 64px; border-radius: 6px; object-fit: cover; border: 1px solid #ddd; display: none;" alt="预览" />
                         </div>
 
-                        <label for="use_music_id" style="display: none">触屏版显示歌曲分段ID:</label>
-                        <input id="use_music_id" type="text" value="355454500" style="display: none"/>
-
                         <label for="active_cmd">允许唤醒的命令:</label>
                         <input id="active_cmd" type="text"
                             value="play,set_play_type_rnd,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop,play_next,play_prev,set_play_type_one,set_play_type_all,set_play_type_sin,set_play_type_seq,gen_music_list,add_to_favorites,del_from_favorites,cmd_del_music,online_play,singer_play" />
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-search" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-6">
+            <button type="button" class="accordion-header" id="accordion-6-toggle" aria-expanded="false" aria-controls="accordion-6-content">
+                <span class="accordion-title">搜索匹配</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-6-content" role="region" aria-labelledby="accordion-6-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="fuzzy_match_cutoff">模糊匹配阈值(0.1~0.9):</label>
@@ -268,7 +245,7 @@
                             <option value="false">关闭</option>
                         </select>
 
-                        <div id="multi_result_action_row" style="display:none;">
+                        <div id="multi_result_action_row">
                             <label for="multi_result_action">多结果处理:</label>
                             <select id="multi_result_action">
                                 <option value="random" selected>随机播放</option>
@@ -278,8 +255,15 @@
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-audio" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-7">
+            <button type="button" class="accordion-header" id="accordion-7-toggle" aria-expanded="false" aria-controls="accordion-7-content">
+                <span class="accordion-title">音频处理</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-7-content" role="region" aria-labelledby="accordion-7-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="get_duration_type">获取时长方式:</label>
@@ -311,8 +295,15 @@
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-tts" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-8">
+            <button type="button" class="accordion-header" id="accordion-8-toggle" aria-expanded="false" aria-controls="accordion-8-content">
+                <span class="accordion-title">语音控制</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-8-content" role="region" aria-labelledby="accordion-8-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="edge_tts_voice">Edge-TTS 语音角色:</label>
@@ -358,18 +349,6 @@
                         <label for="play_type_seq_tts_msg">顺序播放提示音:</label>
                         <input id="play_type_seq_tts_msg" type="text" value="已经设置为顺序播放" />
 
-                        <label for="search_prompt_audio">搜索成功，语音提示:</label>
-                        <select id="search_prompt_audio">
-                            <option value="xiaomusic_ok.mp3" selected>xiaomusic_ok.mp3 ("小Music收到")</option>
-                            <option value="silence.mp3">silence.mp3 (静默)</option>
-                        </select>
-                    </div>
-                    </div>
-                </div>
-
-                <div class="config-tab-content setting-panel" id="tab-voicecmd" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
                         <label for="keywords_playlocal">播放本地歌曲口令:</label>
                         <input id="keywords_playlocal" type="text" value="播放本地歌曲,本地播放歌曲" />
 
@@ -390,20 +369,15 @@
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-network" role="tabpanel">
-                    <div class="card-content">
-                    <div class="rows">
-                        <label for="web_music_proxy">网络歌曲过代理:</label>
-                        <select id="web_music_proxy">
-                            <option value="true" selected>true</option>
-                            <option value="false">false</option>
-                        </select>
-                    </div>
-                    </div>
-                </div>
-
-                <div class="config-tab-content setting-panel" id="tab-device" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-9">
+            <button type="button" class="accordion-header" id="accordion-9-toggle" aria-expanded="false" aria-controls="accordion-9-content">
+                <span class="accordion-title">设备对话</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-9-content" role="region" aria-labelledby="accordion-9-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="group_list">设备分组配置（不推荐，声音不同步）:<a href="https://xdocs.hanxi.cc/issues/366.html"
@@ -413,7 +387,7 @@
                         <label for="enable_pull_ask">获取对话记录:</label>
                         <select id="enable_pull_ask">
                             <option value="true">true</option>
-                            <option value="false selected">false</option>
+                            <option value="false" selected>false</option>
                         </select>
 
                         <label for="pull_ask_sec">获取对话记录间隔(秒):</label>
@@ -427,22 +401,32 @@
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-playlist" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-10">
+            <button type="button" class="accordion-header" id="accordion-10-toggle" aria-expanded="false" aria-controls="accordion-10-content">
+                <span class="accordion-title">歌单</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-10-content" role="region" aria-labelledby="accordion-10-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
-                        <label for="music_list_json">歌单内容:<a href="https://xdocs.hanxi.cc/issues/78.html"
+                        <label for="custom_play_list_json">歌单内容:<a href="https://xdocs.hanxi.cc/issues/78.html"
                                 target="_blank">格式文档</a></label>
-                        <textarea id="music_list_json" type="text"></textarea>
-
-                        <label for="crontab_json">定时任务:<a href="https://xdocs.hanxi.cc/issues/182.html"
-                                target="_blank">格式文档</a></label>
-                        <textarea id="crontab_json" type="text"></textarea>
+                        <textarea id="custom_play_list_json" type="text"></textarea>
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-security" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-11">
+            <button type="button" class="accordion-header" id="accordion-11-toggle" aria-expanded="false" aria-controls="accordion-11-content">
+                <span class="accordion-title">安全访问</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-11-content" role="region" aria-labelledby="accordion-11-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="disable_httpauth">关闭控制台密码验证:</label>
@@ -459,8 +443,15 @@
                     </div>
                     </div>
                 </div>
-
-                <div class="config-tab-content setting-panel" id="tab-other" role="tabpanel">
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-12">
+            <button type="button" class="accordion-header" id="accordion-12-toggle" aria-expanded="false" aria-controls="accordion-12-content">
+                <span class="accordion-title">其他</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-12-content" role="region" aria-labelledby="accordion-12-toggle">
+                <div class="accordion-body">
                     <div class="card-content">
                     <div class="rows">
                         <label for="verbose">是否开启调试日志:</label>
@@ -475,88 +466,117 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-13">
+            <button type="button" class="accordion-header" id="accordion-13-toggle" aria-expanded="false" aria-controls="accordion-13-content">
+                <span class="accordion-title">功能操作</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-13-content" role="region" aria-labelledby="accordion-13-toggle">
+                <div class="accordion-body">
+                    <div class="button-grid">
+                        <button id="refresh_music_tag">
+                            <span class="material-icons">refresh</span>
+                            <span>刷新tag</span>
+                        </button>
+                        <button id="clear_cache">
+                            <span class="material-icons">delete_sweep</span>
+                            <span>清空缓存</span>
+                        </button>
+                        <button id="cleantempdir">
+                            <span class="material-icons">folder_delete</span>
+                            <span>清空临时目录</span>
+                        </button>
+                        <a href="/downloadlog" download="xiaomusic.txt">
+                            <button>
+                                <span class="material-icons">download</span>
+                                <span>下载日志文件</span>
+                            </button>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-14">
+            <button type="button" class="accordion-header" id="accordion-14-toggle" aria-expanded="false" aria-controls="accordion-14-content">
+                <span class="accordion-title">工具链接</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-14-content" role="region" aria-labelledby="accordion-14-toggle">
+                <div class="accordion-body">
+                    <div class="link-grid">
+                        <a href="/docs" target="_blank" class="link-card">
+                            <div class="link-card-icon">
+                                <span class="material-icons">description</span>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-card-title">接口文档</div>
+                                <div class="link-card-description">查看 API 接口文档</div>
+                            </div>
+                        </a>
+                        <a href="./m3u.html" target="_blank" class="link-card">
+                            <div class="link-card-icon">
+                                <span class="material-icons">swap_horiz</span>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-card-title">m3u转换</div>
+                                <div class="link-card-description">转换 m3u 播放列表格式</div>
+                            </div>
+                        </a>
+                        <a href="./downloadtool.html" target="_blank" class="link-card">
+                            <div class="link-card-icon">
+                                <span class="material-icons">download</span>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-card-title">歌曲下载工具</div>
+                                <div class="link-card-description">按歌单/单曲 URL 下载</div>
+                            </div>
+                        </a>
+                        <a href="/static/onlineSearch/index.html" target="_blank" class="link-card">
+                            <div class="link-card-icon">
+                                <span class="material-icons">search</span>
+                            </div>
+                            <div class="link-card-content">
+                                <div class="link-card-title">在线搜索</div>
+                                <div class="link-card-description">MusicFree / LX Server 在线音乐搜索</div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <section class="accordion-item" data-section="accordion-15">
+            <button type="button" class="accordion-header" id="accordion-15-toggle" aria-expanded="false" aria-controls="accordion-15-content">
+                <span class="accordion-title">社区支持</span>
+                <span class="accordion-icon material-icons" aria-hidden="true">expand_more</span>
+            </button>
+            <div class="accordion-content" id="accordion-15-content" role="region" aria-labelledby="accordion-15-toggle">
+                <div class="accordion-body">
+                    <div class="community-buttons-grid">
+                        <a href="https://github.com/hanxi/xiaomusic" target="_blank">
+                            <button class="btn-github">
+                                <span class="material-icons">star</span>
+                                <span>点个 Star</span>
+                            </button>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
 
-    <div class="setting-footer">
-        <div class="button-section">
-            <div class="section-header collapsed" id="operationToggle">
-                <h3 class="button-section-title">功能操作</h3>
-                <span class="section-toggle-icon">▼</span>
-            </div>
-            <div class="section-content collapsed" id="operationContent">
-                <div class="button-grid">
-                    <button id="refresh_music_tag">
-                        <span class="material-icons">refresh</span>
-                        <span>刷新tag</span>
-                    </button>
-                    <button id="clear_cache">
-                        <span class="material-icons">delete_sweep</span>
-                        <span>清空缓存</span>
-                    </button>
-                    <button id="cleantempdir">
-                        <span class="material-icons">folder_delete</span>
-                        <span>清空临时目录</span>
-                    </button>
-                    <a href="/downloadlog" download="xiaomusic.txt">
-                        <button>
-                            <span class="material-icons">download</span>
-                            <span>下载日志文件</span>
-                        </button>
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <div class="button-section">
-            <div class="section-header collapsed" id="toolsToggle">
-                <h3 class="button-section-title">工具链接</h3>
-                <span class="section-toggle-icon">▼</span>
-            </div>
-            <div class="section-content collapsed" id="toolsContent">
-                <div class="link-grid">
-                    <a href="/docs" target="_blank" class="link-card">
-                        <div class="link-card-icon">
-                            <span class="material-icons">description</span>
-                        </div>
-                        <div class="link-card-content">
-                            <div class="link-card-title">接口文档</div>
-                            <div class="link-card-description">查看 API 接口文档</div>
-                        </div>
-                    </a>
-                    <a href="./m3u.html" target="_blank" class="link-card">
-                        <div class="link-card-icon">
-                            <span class="material-icons">swap_horiz</span>
-                        </div>
-                        <div class="link-card-content">
-                            <div class="link-card-title">m3u转换</div>
-                            <div class="link-card-description">转换 m3u 播放列表格式</div>
-                        </div>
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <div class="button-section">
-            <h3 class="button-section-title">社区支持</h3>
-            <div class="community-support-content">
-                <div class="community-buttons-grid">
-                    <a href="https://github.com/hanxi/xiaomusic" target="_blank">
-                        <button class="btn-github">
-                            <span class="material-icons">star</span>
-                            <span>点个 Star</span>
-                        </button>
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
     <footer>
         <p>
             Powered by
             <a href="https://xdocs.hanxi.cc" target="_blank">XiaoMusic</a>
         </p>
     </footer>
+    <script>
+        // 独立设置页：直接初始化设置面板。合并为单页后由面板打开时调用。
+        if (typeof initSettingPanel === "function") {
+            initSettingPanel();
+        }
+    </script>
 </body>
 
 </html>
