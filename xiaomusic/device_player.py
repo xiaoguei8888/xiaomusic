@@ -33,6 +33,38 @@ from xiaomusic.utils.text_utils import (
     parse_ordinal_suffix,
 )
 
+
+def _parse_player_status(playing_info) -> dict:
+    """解析 player_get_status 的响应。
+
+    音箱返回的字段在顶层（status/volume/loop_type/play_song_detail 等），
+    部分固件/接口版本会把同样的内容再塞进 data.info 的 JSON 字符串里。
+    统一为"顶层优先、info 兜底"，避免像旧实现那样只读 info 而拿到 0。
+    """
+    if not isinstance(playing_info, dict):
+        return {"volume": 0, "status": 0}
+    info = dict(playing_info)
+    nested = playing_info.get("data", {})
+    if isinstance(nested, dict) and nested.get("info"):
+        try:
+            nested_info = json.loads(nested["info"])
+        except (TypeError, ValueError):
+            nested_info = None
+        if isinstance(nested_info, dict):
+            merged = dict(nested_info)
+            merged.update({k: v for k, v in playing_info.items() if k != "data"})
+            info = merged
+    return info
+
+
+def _extract_volume(playing_info) -> int:
+    """从 player_get_status 响应里取音量（顶层优先）。"""
+    try:
+        return int(_parse_player_status(playing_info).get("volume", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 class XiaoMusicDevice:
     """设备播放控制类
 
@@ -928,9 +960,7 @@ class XiaoMusicDevice:
                 self.device_id
             )
             self.log.info(f"get_volume. playing_info:{playing_info}")
-            volume = json.loads(playing_info.get("data", {}).get("info", "{}")).get(
-                "volume", 0
-            )
+            volume = _extract_volume(playing_info)
         except Exception as e:
             self.log.warning(f"Execption {e}")
         volume = int(volume)
@@ -944,8 +974,7 @@ class XiaoMusicDevice:
                 self.device_id
             )
             self.log.info(f"get_player_status. playing_info:{playing_info}")
-            info = json.loads(playing_info.get("data", {}).get("info", "{}"))
-            return info
+            return _parse_player_status(playing_info)
         except Exception as e:
             self.log.warning(f"Execption {e}")
         return {"volume": 0, "status": 0}

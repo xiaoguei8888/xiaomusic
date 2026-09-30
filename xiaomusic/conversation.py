@@ -13,9 +13,15 @@ import time
 
 from aiohttp import ClientSession, ClientTimeout
 
-from xiaomusic.const import GET_ASK_BY_MINA, LATEST_ASK_API
+from xiaomusic.const import COOKIE_TEMPLATE, GET_ASK_BY_MINA, LATEST_ASK_API
 
 REINIT_COOLDOWN_SEC = 60
+
+# 轮询失败退避（秒）：2 → 4 → … → 60 封顶
+BACKOFF_START_SEC = 2
+BACKOFF_MAX_SEC = 60
+# 进入降级提示前允许的连续失败次数
+FAILURE_WARN_THRESHOLD = 3
 
 
 class ConversationPoller:
@@ -53,6 +59,11 @@ class ConversationPoller:
 
         self.polling_event = asyncio.Event()
         self.new_record_event = asyncio.Event()
+
+        # 失败退避与日志去重
+        self._consecutive_failures = 0
+        self._backoff_sec = BACKOFF_START_SEC
+        self._last_error = ""
 
     async def run_conversation_loop(self, do_check_cmd_callback, reset_timer_callback):
         """运行对话循环
@@ -140,7 +151,10 @@ class ConversationPoller:
 
                 start = time.perf_counter()
                 await self.polling_event.wait()
-                if self.config.pull_ask_sec <= 1:
+                if self._consecutive_failures:
+                    # 失败后退避，避免把日志刷爆
+                    await asyncio.sleep(self._backoff_sec)
+                elif self.config.pull_ask_sec <= 1:
                     if (d := time.perf_counter() - start) < 1:
                         await asyncio.sleep(1 - d)
                 else:
@@ -154,8 +168,75 @@ class ConversationPoller:
             self.log.info("Polling task cancelled")
             raise
 
+    def _build_ask_cookies(self, device_id):
+        """组装对话接口所需的 cookie。
+
+        小米对话接口要求同时带 deviceId / userId / serviceToken，
+        只带 deviceId 会返回 400 MissingRequestCookieException。
+        缺失项自动省略，兼容旧版仅存 deviceId 的 auth.json。
+        """
+        cookie_dict = {"deviceId": device_id}
+        state = getattr(self.auth_manager, "_state", None)
+        data = getattr(state, "data", None) or {}
+        user_id = data.get("userId")
+        if user_id:
+            cookie_dict["userId"] = str(user_id)
+        service_token = ((data.get("sids") or {}).get("micoapi") or {}).get(
+            "serviceToken"
+        )
+        if service_token:
+            cookie_dict["serviceToken"] = service_token
+
+        # 交给 aiohttp 的是解析后的键值对；COOKIE_TEMPLATE 是同一协议的字符串形态，
+        # 这里用它做一次自检，避免模板与实际字段脱节。
+        expected = [
+            part.split("=", 1)[0].strip()
+            for part in COOKIE_TEMPLATE.split(";")
+            if part.strip()
+        ]
+        missing = [name for name in ("deviceId", "userId", "serviceToken") if name not in cookie_dict]
+        if missing and self._last_error != "cookie:" + ",".join(missing):
+            self.log.warning(
+                "[CONV] 对话接口 cookie 缺少 %s，将可能返回 400；"
+                "请重新登录以补全 auth.json（模板字段: %s）",
+                missing,
+                expected,
+            )
+            self._last_error = "cookie:" + ",".join(missing)
+        return cookie_dict
+
+    def _note_failure(self, reason: str) -> None:
+        """记录一次失败并推进退避；日志按原因去重，避免刷屏。"""
+        self._consecutive_failures += 1
+        self._backoff_sec = min(self._backoff_sec * 2, BACKOFF_MAX_SEC)
+        if reason != self._last_error:
+            self.log.warning(
+                "[CONV] 轮询对话失败(第 %d 次): %s；进入退避 %ds",
+                self._consecutive_failures,
+                reason,
+                self._backoff_sec,
+            )
+            self._last_error = reason
+        elif self._consecutive_failures == FAILURE_WARN_THRESHOLD:
+            self.log.warning(
+                "[CONV] 对话轮询已连续失败 %d 次（%s）。若长期无法恢复，"
+                "可设置 XIAOMUSIC_GET_ASK_BY_MINA=true 改用 mina 通道。",
+                self._consecutive_failures,
+                reason,
+            )
+
+    def _note_success(self) -> None:
+        if self._consecutive_failures:
+            self.log.info(
+                "[CONV] 对话轮询恢复正常（此前连续失败 %d 次）",
+                self._consecutive_failures,
+            )
+        self._consecutive_failures = 0
+        self._backoff_sec = BACKOFF_START_SEC
+        self._last_error = ""
+
     async def get_latest_ask_from_xiaoai(self, session, device_id):
-        cookies = {"deviceId": device_id}
+        cookies = self._build_ask_cookies(device_id)
         retries = 3
         for i in range(retries):
             try:
@@ -168,8 +249,13 @@ class ConversationPoller:
                 r = await session.get(url, timeout=timeout, cookies=cookies)
 
                 if r.status != 200:
-                    self.log.warning(f"Request failed with status {r.status}")
-                    if i == 2 and r.status == 401:
+                    body = ""
+                    try:
+                        body = (await r.text())[:160].replace("\n", " ")
+                    except Exception:
+                        pass
+                    self._note_failure(f"HTTP {r.status} {body}")
+                    if i == retries - 1 and r.status == 401:
                         await self._try_reinit("401错误")
                     continue
 
@@ -178,19 +264,21 @@ class ConversationPoller:
                 return None
 
             except Exception as e:
-                self.log.warning(f"Execption {e}")
+                self._note_failure(f"{type(e).__name__}: {e}")
                 continue
 
             try:
                 data = await r.json()
             except Exception as e:
-                self.log.warning(f"Execption {e}")
-                if i == 2:
+                self._note_failure(f"JSON解析失败: {e}")
+                if i == retries - 1:
                     self.log.info("Maybe outof date trying to re init it")
                     await self._try_reinit("JSON解析失败")
             else:
+                self._note_success()
                 return self._get_last_query(device_id, data)
-        self.log.warning("get_latest_ask_from_xiaoai. All retries failed.")
+        if self._consecutive_failures % FAILURE_WARN_THRESHOLD == 0:
+            self.log.warning("get_latest_ask_from_xiaoai. All retries failed.")
 
     async def _try_reinit(self, reason):
         elapsed = time.time() - self._last_reinit_time
