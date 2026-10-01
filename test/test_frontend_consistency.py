@@ -304,7 +304,7 @@ def test_save_handler_is_bound_and_reports_busy_state():
     body = m.group(0)
     assert 'url: "/savesetting"' in body, "保存按钮未提交到 /savesetting"
     assert 'prop("disabled", true)' in body, "提交期间未禁用按钮，可能重复提交"
-    assert 'alert(msg)' in body, "保存失败时未把后端信息提示给用户"
+    assert "alert(msg)" in body, "保存失败时未把后端信息提示给用户"
 
 
 def test_settings_dirty_hint_only_on_user_input():
@@ -314,7 +314,9 @@ def test_settings_dirty_hint_only_on_user_input():
     若监听 change 会在打开面板时就误报「有未保存的修改」。
     """
     js = strip_comments(read("setting.js"))
-    m = re.search(r'\$root\.on\("input", "input, select, textarea".*?\n    \}\);', js, flags=re.S)
+    m = re.search(
+        r'\$root\.on\("input", "input, select, textarea".*?\n    \}\);', js, flags=re.S
+    )
     assert m, "setting.js 未在设置面板上做脏检查"
     assert 'addClass("is-dirty")' in m.group(0), "编辑后未高亮保存按钮"
 
