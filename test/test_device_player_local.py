@@ -47,6 +47,8 @@ class FakeMina:
         self.error = error
         self.calls = []
         self.volume_calls = []
+        self.pause_calls = []
+        self.stop_calls = []
 
     async def player_get_status(self, device_id):
         self.calls.append(device_id)
@@ -58,6 +60,18 @@ class FakeMina:
         self.volume_calls.append((device_id, volume))
         if self.error is not None:
             raise self.error
+
+    async def player_pause(self, device_id):
+        self.pause_calls.append(device_id)
+        if self.error is not None:
+            raise self.error
+        return True
+
+    async def player_stop(self, device_id):
+        self.stop_calls.append(device_id)
+        if self.error is not None:
+            raise self.error
+        return True
 
 
 def make_device(
@@ -300,7 +314,8 @@ async def test_get_cloud_status_normalizes_ms_to_seconds(config, fake_log):
             "track_list": [],
         }
     )
-    mina = FakeMina({"code": 0, "data": {"info": info}})
+    # 真机形状：字段在顶层（data.info 只是部分固件的兼容分支）
+    mina = FakeMina(json.loads(info))
     dev = make_device(config, fake_log, songs=["a"], mina_service=mina)
 
     snap = await dev.get_cloud_status()
@@ -309,6 +324,14 @@ async def test_get_cloud_status_normalizes_ms_to_seconds(config, fake_log):
     assert snap["duration"] == 200.0
     assert snap["audio_id"] == "aid-1"
     assert dev.get_display_state()[0] is True
+
+    # 兼容分支：只有 data.info、没有顶层字段时仍需解析（叠加一个标记字段）
+    legacy = FakeMina({"status": 1, "data": {"info": info}})
+    dev2 = make_device(config, fake_log, songs=["a"], mina_service=legacy)
+    snap2 = await dev2.get_cloud_status()
+
+    assert snap2 is not None and snap2["duration"] == 200.0
+    assert dev2.get_display_state()[0] is True
 
 
 async def test_get_cloud_status_returns_none_without_service(config, fake_log):
@@ -436,13 +459,33 @@ async def test_get_cloud_status_error_paths(config, fake_log):
     dev = make_device(config, fake_log, songs=["a"], mina_service=mina)
     assert await dev.get_cloud_status() is None
 
-    bad_json = FakeMina({"code": 0, "data": {"info": "{"}})
-    dev2 = make_device(config, fake_log, songs=["a"], mina_service=bad_json)
-    assert await dev2.get_cloud_status() is None
+    # 真机返回：字段在顶层，没有 data.info 包装。
+    # 旧实现只读 data.info，把这种「完全正常」的响应当成异常丢弃，
+    # 导致 UI 播放状态与进度条永远是空。这里锁死这个回归。
+    top_level = FakeMina(
+        {
+            "status": 2,
+            "volume": 5,
+            "play_song_detail": {"position": 1000, "duration": 2000},
+        }
+    )
+    dev2 = make_device(config, fake_log, songs=["a"], mina_service=top_level)
+    snap = await dev2.get_cloud_status()
+    assert snap is not None, "顶层字段必须被解析"
+    assert snap["status"] == 2 and snap["volume"] == 5 and snap["duration"] == 2.0
 
-    bad_code = FakeMina({"code": 7, "data": {"info": "{}"}})
-    dev3 = make_device(config, fake_log, songs=["a"], mina_service=bad_code)
-    assert await dev3.get_cloud_status() is None
+    # info 是坏 JSON 时回退到顶层，而不是整体判失败
+    bad_json = FakeMina({"status": 1, "data": {"info": "{"}})
+    dev3 = make_device(config, fake_log, songs=["a"], mina_service=bad_json)
+    snap3 = await dev3.get_cloud_status()
+    assert snap3 is not None and snap3["status"] == 1
+
+    # 完全取不到任何字段（空 dict / 非 dict）才算异常
+    dev4 = make_device(config, fake_log, songs=["a"], mina_service=FakeMina({}))
+    assert await dev4.get_cloud_status() is None
+
+    dev5 = make_device(config, fake_log, songs=["a"], mina_service=FakeMina(None))
+    assert await dev5.get_cloud_status() is None
 
 
 async def test_get_player_status_error_returns_default(config, fake_log):
@@ -540,5 +583,54 @@ def test_get_music_rnd_reshuffle_picks_from_new_list(config, fake_log):
 
     # 洗牌后 index 0 已置顶当前曲，下一首应是新列表的 index 1
     assert got == dev._play_list[1]
+
+
+# --------------------------------------------------------------------------
+# 「暂停不管用」回归：音箱把 status 放在顶层，旧实现只读 data.info
+# --------------------------------------------------------------------------
+async def test_playing_detected_from_top_level_fields(config, fake_log):
+    """真机返回的顶层 status=1 必须被判为「正在播放」。"""
+    mina = FakeMina({"status": 1, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], mina_service=mina)
+
+    assert await dev.get_if_xiaoai_is_playing() is True
+
+
+async def test_idle_detected_from_top_level_fields(config, fake_log):
+    mina = FakeMina({"status": 2, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], mina_service=mina)
+
+    assert await dev.get_if_xiaoai_is_playing() is False
+
+
+async def test_force_stop_always_sends_player_stop(config, fake_log):
+    """核心回归：即使暂停后云端已报 idle，也必须补一条 player_stop。"""
+    mina = FakeMina({"status": 2, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], mina_service=mina)
+
+    await dev.force_stop_xiaoai("dev-1")
+
+    assert mina.pause_calls == ["dev-1"]
+    assert mina.stop_calls == ["dev-1"], "player_stop 被静默跳过 = 暂停不管用"
+
+
+async def test_stop_if_playing_sends_stop_when_playing(config, fake_log):
+    """云端报 playing 时，非强制路径也要发 player_stop。"""
+    mina = FakeMina({"status": 1, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], mina_service=mina)
+
+    await dev.stop_if_xiaoai_is_playing("dev-1")
+
+    assert mina.stop_calls == ["dev-1"]
+
+
+async def test_stop_if_playing_skips_when_idle_and_not_forced(config, fake_log):
+    """未播放且未强制时不应打扰云端（保持原有节流语义）。"""
+    mina = FakeMina({"status": 2, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], mina_service=mina)
+
+    await dev.stop_if_xiaoai_is_playing("dev-1")
+
+    assert mina.stop_calls == []
 
 

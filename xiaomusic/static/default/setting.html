@@ -63,18 +63,76 @@
                             <div class="form-item">
                                 <label for="login-status">登录状态:</label>
                                 <div id="login-status" class="login-status">检测中…</div>
-                            </div>
-                            <div class="form-item">
-                                <label>用米家 App 扫描二维码登录:</label>
-                                <div id="qrcode-box" style="display:none; text-align:center;">
-                                    <img id="qrcode-img" alt="登录二维码"
-                                        style="width:220px;height:220px;background:#fff;padding:8px;border:1px solid #ddd;border-radius:8px;" />
-                                    <div id="qrcode-status" style="margin-top:8px;color:#666;">正在获取二维码…</div>
-                                </div>
-                                <button class="option-inline mini-button" id="show-qrcode" type="button">
-                                    <span class="material-icons" aria-hidden="true">qr_code</span>
-                                    <span>刷新二维码</span>
+                                <button class="option-inline mini-button" id="login-verify-hint"
+                                    type="button" style="display:none; margin-top:8px;">
+                                    <span class="material-icons" aria-hidden="true">sms</span>
+                                    <span>完成验证（发送短信）</span>
                                 </button>
+                            </div>
+
+                            <div class="login-tabs" role="tablist" aria-label="登录方式">
+                                <button class="login-tab is-active" id="tab-password" type="button" role="tab"
+                                    aria-selected="true" aria-controls="panel-password" tabindex="0">账号密码</button>
+                                <button class="login-tab" id="tab-verify" type="button" role="tab"
+                                    aria-selected="false" aria-controls="panel-verify" tabindex="-1">短信验证码<span
+                                        class="login-tab-badge" id="tab-verify-badge"
+                                        style="display:none;">1</span></button>
+                            </div>
+
+                            <div class="login-panel" id="panel-password" role="tabpanel" aria-labelledby="tab-password">
+                                <div class="form-item">
+                                    <label for="login-account">账号（小米 ID / 手机号）:</label>
+                                    <input id="login-account" type="text" autocomplete="username"
+                                        placeholder="留空则使用已保存的账号" />
+                                </div>
+
+                                <div class="form-item">
+                                    <label for="login-password">密码:</label>
+                                    <input id="login-password" type="password" autocomplete="current-password"
+                                        placeholder="留空则使用已保存的密码" />
+                                </div>
+
+                                <div class="form-item">
+                                    <label>&nbsp;</label>
+                                    <button class="option-inline mini-button" id="login-submit" type="button">
+                                        <span class="material-icons" aria-hidden="true">login</span>
+                                        <span>登录 / 重新验证</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="login-panel" id="panel-verify" role="tabpanel" aria-labelledby="tab-verify"
+                                style="display:none;">
+                                <div class="form-item">
+                                    <label for="verify-code" id="verify-label">短信验证码:</label>
+                                    <input id="verify-code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                                        placeholder="请输入收到的验证码" />
+                                    <div style="margin-top:8px;">
+                                        <button class="option-inline mini-button" id="verify-submit" type="button">
+                                            <span class="material-icons" aria-hidden="true">verified</span>
+                                            <span>提交验证码</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="form-item">
+                                    <label>&nbsp;</label>
+                                    <div class="verify-status-line" id="verify-status">尚未发起验证</div>
+                                </div>
+
+                                <div class="form-item">
+                                    <label>&nbsp;</label>
+                                    <div class="verify-actions">
+                                        <button class="option-inline mini-button" id="verify-resend" type="button">
+                                            <span class="material-icons" aria-hidden="true">refresh</span>
+                                            <span>重新发送验证码</span>
+                                        </button>
+                                        <button class="option-inline mini-button" id="verify-back" type="button">
+                                            <span class="material-icons" aria-hidden="true">arrow_back</span>
+                                            <span>返回账号密码</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

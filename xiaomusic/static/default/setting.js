@@ -66,8 +66,8 @@ function initSettingPanel() {
       //如果device_list为空，则可能是未设置小米账号密码或者已设置密码，但是没有过小米验证，此处需要提示用户
       if (device_list.length == 0) {
         const loginTips = accountPassValid
-          ? `<div class="login-tips">未发现可用的小爱设备，请确认已通过扫码登录正确的账号，并关闭加速代理或在<a href="https://www.mi.com">小米官网</a>登陆过人脸或滑块验证。如仍未解决。请根据<a href="https://github.com/hanxi/xiaomusic/issues/99">FAQ</a>的内容解决问题。</div>`
-          : `<div class="login-tips">未发现可用的小爱设备，请先在下方扫码登录小米账号</div>`;
+          ? `<div class="login-tips">未发现可用的小爱设备，请确认登录的是正确的小米账号，并关闭加速代理，或先在<a href="https://www.mi.com">小米官网</a>完成人脸/滑块验证。如仍未解决，请在「账号登录」中点击「完成验证（发送短信）」。</div>`
+          : `<div class="login-tips">未发现可用的小爱设备，请先在下方「账号登录」中登录小米账号。</div>`;
         $(selector).append(loginTips);
         return;
       }
@@ -369,56 +369,16 @@ function initSettingPanel() {
       }
     });
 
-    let qrcodeTimer = null;
-
-  function stopQrcodePolling() {
-    if (qrcodeTimer) {
-      clearInterval(qrcodeTimer);
-      qrcodeTimer = null;
-    }
-  }
-
-    function pollQrcodeStatus() {
-      $.get("/api/login/qrcode/status", function (res) {
-        if (!res) return;
-        if (res.state === "success") {
-          stopQrcodePolling();
-          $("#qrcode-status").text("登录成功，正在刷新页面...");
-          setTimeout(function () { location.reload(); }, 800);
-        } else if (res.state === "expired" || res.state === "error") {
-          stopQrcodePolling();
-          $("#qrcode-status").text("失败: " + (res.message || res.state));
-        } else {
-          $("#qrcode-status").text("等待扫码...");
-        }
-      });
-    }
-
-    function loadQrcode() {
-      let $btn = $("#show-qrcode").prop("disabled", true);
-      stopQrcodePolling();
-      $("#qrcode-box").show();
-      $("#qrcode-img").attr("src", "");
-      $("#qrcode-status").text("正在获取二维码...");
-      $.get("/api/login/qrcode", function (res) {
-        $btn.prop("disabled", false);
-        if (!res || !res.success) {
-          $("#qrcode-status").text("获取失败: " + ((res && res.message) || "未知错误"));
-          return;
-        }
-        $("#qrcode-img").attr("src", res.qrcode);
-        $("#qrcode-status").text("等待扫码...");
-        qrcodeTimer = setInterval(pollQrcodeStatus, 2000);
-      }).fail(function (xhr) {
-        $btn.prop("disabled", false);
-        $("#qrcode-status").text("请求失败: " + xhr.statusText);
-      });
-    }
-
-    $("#show-qrcode").on("click", loadQrcode);
-
     let verifyTimer = null;
+    let verifyCountdownTimer = null;
     let verifySid = "micoapi";
+
+    // 兜底：把不存在的 DOM 当成空集合处理，避免一个缺失元素让整段脚本中断。
+    // 历史上这里引用过 /api/login/qrcode（后端已删除，返回 404），属于死代码。
+    function showLoginError(msg) {
+      switchLoginTab("verify");
+      $("#verify-status").text("⚠️ " + msg);
+    }
 
     function stopVerifyPolling() {
       if (verifyTimer) {
@@ -427,21 +387,91 @@ function initSettingPanel() {
       }
     }
 
-    function showVerifyBox(method) {
-      $("#verify-box").show();
+    /* ---------- 登录方式切换（账号密码 / 短信验证码） ----------
+     * 纯 UI 操作：绝不发网络请求。验证码窗口在后端是 300s 的 pending 状态，
+     * 用户来回切 tab 不应该重发短信 —— 重发会触发 180s 限流，让用户 3 分钟输不了码。 */
+    function switchLoginTab(which) {
+      const want = which === "verify" ? "verify" : "password";
+      $("#tab-password").toggleClass("is-active", want === "password")
+        .attr("aria-selected", want === "password" ? "true" : "false")
+        .attr("tabindex", want === "password" ? "0" : "-1");
+      $("#tab-verify").toggleClass("is-active", want === "verify")
+        .attr("aria-selected", want === "verify" ? "true" : "false")
+        .attr("tabindex", want === "verify" ? "0" : "-1");
+      $("#panel-password").toggle(want === "password");
+      $("#panel-verify").toggle(want === "verify");
+      if (want === "verify") {
+        clearVerifyBadge();
+        $("#verify-code").trigger("focus");
+      }
+    }
+
+    function showVerifyBadge() {
+      $("#tab-verify-badge").show();
+    }
+
+    function clearVerifyBadge() {
+      $("#tab-verify-badge").hide();
+    }
+
+    /* 验证码倒计时：让「窗口还在」这件事可见，而不是让用户猜。 */
+    function startVerifyCountdown(seconds) {
+      stopVerifyCountdown();
+      let left = seconds;
+      const tick = function () {
+        if (left <= 0) {
+          stopVerifyCountdown();
+          $("#verify-countdown").remove();
+          return;
+        }
+        const m = Math.floor(left / 60);
+        const s = String(left % 60).padStart(2, "0");
+        $("#verify-countdown").remove();
+        $("#verify-status").after(
+          '<div class="verify-countdown" id="verify-countdown">验证码 ' + m + ":" + s + " 后失效</div>"
+        );
+        left -= 1;
+      };
+      tick();
+      verifyCountdownTimer = setInterval(tick, 1000);
+    }
+
+    function stopVerifyCountdown() {
+      if (verifyCountdownTimer) {
+        clearInterval(verifyCountdownTimer);
+        verifyCountdownTimer = null;
+      }
+      $("#verify-countdown").remove();
+    }
+
+    function showVerifyBox(method, waitSeconds) {
       $("#verify-label").text((method === "Email" ? "邮箱" : "短信") + "验证码:");
-      $("#verify-code").val("").focus();
+      const $code = $("#verify-code");
+      // 不要无条件清空：用户可能切走 tab 又切回来，清空等于让他重新输。
+      if (!$code.val()) {
+        $code.trigger("focus");
+      }
       $("#verify-status").text("验证码已发送，请查收并输入");
+      startVerifyCountdown(waitSeconds || 300);
+    }
+
+    // 本轮验证的目标 sid 完成了吗？
+    function sidDone(res, sid) {
+      return !!(res && res.sids && res.sids[sid] === "ok");
     }
 
     function pollLoginState() {
       $.get("/api/login/status", function (res) {
         if (!res) return;
-        if (res.sids && res.sids.micoapi === "ok") {
+        if (sidDone(res, verifySid)) {
           stopVerifyPolling();
-          $("#verify-status").text("登录成功，正在刷新页面...");
+          stopVerifyCountdown();
+          clearVerifyBadge();
+          $("#verify-status").text("验证成功，正在刷新页面...");
           setTimeout(function () { location.reload(); }, 800);
         } else if (res.state === "cooldown") {
+          stopVerifyPolling();
+          stopVerifyCountdown();
           $("#verify-status").text("请求过于频繁，请稍后再试");
         } else {
           $("#verify-status").text("等待验证结果...");
@@ -449,9 +479,19 @@ function initSettingPanel() {
       });
     }
 
+    function beginVerify(sid, method, waitSeconds) {
+      verifySid = sid || "xiaomiio";
+      showVerifyBox(method, waitSeconds);
+      // 需要二次验证时自动切到验证码 tab，用户不用自己找入口。
+      switchLoginTab("verify");
+      stopVerifyPolling();
+      verifyTimer = setInterval(pollLoginState, 2000);
+    }
+
     function startLogin() {
       let $btn = $("#login-submit").prop("disabled", true);
-      $("#verify-box").hide();
+      clearVerifyBadge();
+      stopVerifyCountdown();
       $("#login-status").text("登录中...");
       $.ajax({
         url: "/api/login/start",
@@ -464,27 +504,57 @@ function initSettingPanel() {
       }).done(function (res) {
         $btn.prop("disabled", false);
         if (!res) { $("#login-status").text("登录失败：无响应"); return; }
+
         if (res.state === "cooldown") {
           $("#login-status").text("请求过于频繁，请稍后再试");
           return;
         }
-        if (res.sids && res.sids.micoapi === "ok") {
+
+        // 后端在需要二次验证时返回 state=pending，并带上待验证的 sid
+        // （可能是 micoapi，也可能是 xiaomiio —— 后者决定设备列表能否拉到）。
+        if (res.state === "pending") {
+          $("#login-status").text("需要短信验证，请查看「短信验证码」页");
+          showVerifyBadge();
+          switchLoginTab("verify");
+          beginVerify(res.sid, res.method, res.waitSeconds);
+          return;
+        }
+
+        if (sidDone(res, "micoapi") && sidDone(res, "xiaomiio")) {
           $("#login-status").text("登录成功，正在刷新页面...");
           setTimeout(function () { location.reload(); }, 800);
           return;
         }
-        if (res.state === "pending") {
-          verifySid = res.sid || "micoapi";
-          $("#login-status").text("需要验证");
-          showVerifyBox(res.method);
-          stopVerifyPolling();
-          verifyTimer = setInterval(pollLoginState, 2000);
-        } else {
-          $("#login-status").text("登录失败，请检查账号密码");
+
+        if (sidDone(res, "micoapi")) {
+          // micoapi 正常但 xiaomiio 未完成：设备列表依然不可用，交给 loadLoginStatus 如实呈现
+          $("#login-status").text("登录成功，正在刷新页面...");
+          setTimeout(function () { location.reload(); }, 800);
+          return;
         }
+
+        $("#login-status").text("登录失败，请检查账号密码");
       }).fail(function (xhr) {
         $btn.prop("disabled", false);
         $("#login-status").text("请求失败: " + xhr.statusText);
+      });
+    }
+
+    // 用户在没有表单提交的情况下，直接为未验证的 sid 补发一次验证
+    function requestVerify(sid) {
+      $.ajax({
+        url: "/api/login/verify/open",
+        method: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({ sid: sid }),
+      }).done(function (res) {
+        if (!res || !res.success) {
+          showLoginError((res && res.message) || "验证发起失败");
+          return;
+        }
+        beginVerify(res.sid || sid, res.method, res.waitSeconds);
+      }).fail(function (xhr) {
+        showLoginError("请求失败: " + xhr.statusText);
       });
     }
 
@@ -512,15 +582,60 @@ function initSettingPanel() {
       if (e.key === "Enter") submitVerify();
     });
 
+    // tab 切换：纯 UI，零网络请求（防止误触发重发短信 → 180s 限流）
+    $("#tab-password").on("click", function () { switchLoginTab("password"); });
+    $("#tab-verify").on("click", function () { switchLoginTab("verify"); });
+    $("#verify-back").on("click", function () { switchLoginTab("password"); });
+
+    // 键盘左右方向键在 tab 间移动（WAI-ARIA tabs 模式）
+    $(".login-tab").on("keydown", function (e) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const next = $(this).attr("id") === "tab-password" ? "verify" : "password";
+      switchLoginTab(next);
+      $("#tab-" + next).trigger("focus");
+    });
+
+    // 重发是显式的用户动作：只有点这个按钮才会重新请求短信。
+    $("#verify-resend").on("click", function () {
+      requestVerify(verifySid);
+    });
+
+    // 登录状态区渲染：文案必须与 /api/login/status 的语义严格一致
+    function renderLoginStatus(res) {
+      const $status = $("#login-status");
+      const micoapiOk = !!(res.sids && res.sids.micoapi === "ok");
+      const xiaomiioOk = !!(res.sids && res.sids.xiaomiio === "ok");
+
+      if (micoapiOk && xiaomiioOk) {
+        // 两个 sid 都正常，设备列表才是真的可用
+        $status.text("✅ 已登录（" + (res.device_count || 0) + " 个设备）");
+        $("#login-verify-hint").hide();
+        return;
+      }
+
+      if (micoapiOk) {
+        // 账号可登录，但 xiaomiio 未验证 → 设备列表一定拉不到。
+        // 这里不能写「已登录（N 个设备）」，否则与「没找到小爱音箱」自相矛盾。
+        // 关键是给用户一个能点的入口，而不是只告诉他「需完成验证」。
+        $status.text("⚠️ 账号已登录，但设备列表不可用");
+        $("#login-verify-hint")
+          .show()
+          .off("click")
+          .on("click", function () {
+            requestVerify("xiaomiio");
+          });
+        return;
+      }
+
+      $status.text("⚠️ 未登录，请输入账号密码登录");
+      $("#login-verify-hint").hide();
+    }
+
     function loadLoginStatus() {
       $.get("/api/login/status", function (res) {
         if (!res) return;
-        if (res.sids && res.sids.micoapi === "ok") {
-          let extra = res.sids.xiaomiio === "ok" ? "" : "（设备列表待验证）";
-          $("#login-status").text("✅ 已登录" + extra + "（" + (res.device_count || 0) + " 个设备）");
-        } else {
-          $("#login-status").text("⚠️ 未登录，请输入账号密码登录");
-        }
+        renderLoginStatus(res);
       }).fail(function () {
         $("#login-status").text("登录状态获取失败");
       });

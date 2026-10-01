@@ -304,7 +304,15 @@ class AuthManager:
                     f"[PATCH-mi_request] mi_request 失败: {exc}, "
                     "清理 session 并重新加载 token 后重试"
                 )
-                mi_account.session.cookie_jar.clear()
+                # MiAccount 内部属性是 _session（不是 session）；
+                # 旧代码在这里抛 AttributeError，把「可恢复的登录失败」变成永久失败，
+                # 连带 player_pause/player_stop 全部失效（表现为「暂停不管用」）。
+                session = getattr(mi_account, "_session", None) or getattr(
+                    mi_account, "session", None
+                )
+                cookie_jar = getattr(session, "cookie_jar", None)
+                if cookie_jar is not None:
+                    cookie_jar.clear()
                 auth_manager._state.load()
                 mi_account.token = auth_manager._state.to_miservice_token()
                 if not mi_account.token.get("deviceId"):

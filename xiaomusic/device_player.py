@@ -182,16 +182,14 @@ class XiaoMusicDevice:
             self.log.warning(f"get_cloud_status 请求失败: {e}")
             return None
 
-        info = raw.get("data", {}).get("info", "{}") if isinstance(raw, dict) else {}
-        if isinstance(info, str):
-            try:
-                info = json.loads(info)
-            except Exception:
-                self.log.warning(f"get_cloud_status 解析 info 失败: {info!r}")
-                return None
-        if raw.get("code") != 0 or not isinstance(info, dict) or not info:
+        # 以「原始响应」判定有效性：空响应 / 纯 code 响应不能伪造成「已停止」，
+        # 否则 UI 会拿到一个 _ok=True 的假快照（真机曾出现 status 恒为 0）。
+        # 注意不能用 _parse_player_status 的结果判断——它为 None 兜底成 {volume:0,status:0}。
+        raw_fields = raw if isinstance(raw, dict) else {}
+        if not {"status", "volume", "track_list"} & set(raw_fields):
             self.log.warning(f"get_cloud_status 云端返回异常: {raw!r}")
             return None
+        info = _parse_player_status(raw)
 
         detail = info.get("play_song_detail") or {}
         snapshot = {
@@ -653,13 +651,18 @@ class XiaoMusicDevice:
         await self.check_replay()
 
     async def force_stop_xiaoai(self, device_id):
-        """强制停止小爱播放"""
+        """强制停止小爱播放
+
+        只发 player_pause 是不够的：L17A 等机型 player_pause 返回 True 但
+        播放状态不变，必须补一条 player_stop。因此这里 pause 与 stop 都发，
+        并记录云端状态，便于日后排查"命令成功但没停下来"的情况。
+        """
         try:
             ret = await self.auth_manager.mina_service.player_pause(device_id)
             self.log.info(
                 f"force_stop_xiaoai player_pause device_id:{device_id} ret:{ret}"
             )
-            await self.stop_if_xiaoai_is_playing(device_id)
+            await self.stop_if_xiaoai_is_playing(device_id, force=True)
         except Exception as e:
             self.log.warning(f"Execption {e}")
 
@@ -669,21 +672,24 @@ class XiaoMusicDevice:
             self.device_id
         )
         self.log.info(playing_info)
-        # WTF xiaomi api
-        is_playing = (
-            json.loads(playing_info.get("data", {}).get("info", "{}")).get("status", -1)
-            == 1
-        )
+        # 音箱把 status 放在顶层（详见 _parse_player_status）；旧实现只读 data.info
+        # 导致恒为 -1，播放中也被判为未播放，player_stop 永远不会发出。
+        is_playing = _parse_player_status(playing_info).get("status") == 1
         return is_playing
 
-    async def stop_if_xiaoai_is_playing(self, device_id):
-        """如果小爱正在播放则停止"""
+    async def stop_if_xiaoai_is_playing(self, device_id, force=False):
+        """如果小爱正在播放则停止
+
+        force=True 时无条件发送 player_stop（用于用户显式"停止/暂停"）：
+        云端 status 有延迟或机型不播报状态时，靠它兜底。
+        """
         is_playing = await self.get_if_xiaoai_is_playing()
-        if is_playing or self.config.enable_force_stop:
+        if force or is_playing or self.config.enable_force_stop:
             # stop it
             ret = await self.auth_manager.mina_service.player_stop(device_id)
             self.log.info(
-                f"stop_if_xiaoai_is_playing player_stop device_id:{device_id} enable_force_stop:{self.config.enable_force_stop} ret:{ret}"
+                f"stop_if_xiaoai_is_playing player_stop device_id:{device_id} "
+                f"is_playing:{is_playing} force:{force} ret:{ret}"
             )
 
 

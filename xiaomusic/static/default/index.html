@@ -109,6 +109,21 @@
                     <div id="login-status" class="login-status">检测中…</div>
                     </div>
                     <div class="form-row">
+                    <label>&nbsp;</label>
+                    <button class="option-inline" id="login-verify-hint" type="button" style="display:none;">
+                    <span class="material-icons" aria-hidden="true">sms</span>
+                    <span>完成验证（发送短信）</span>
+                    </button>
+                    </div>
+                    <div class="login-tabs" role="tablist" aria-label="登录方式">
+                    <button class="login-tab is-active" id="tab-password" type="button" role="tab"
+                    aria-selected="true" aria-controls="panel-password" tabindex="0">账号密码</button>
+                    <button class="login-tab" id="tab-verify" type="button" role="tab"
+                    aria-selected="false" aria-controls="panel-verify" tabindex="-1">短信验证码<span
+                    class="login-tab-badge" id="tab-verify-badge" style="display:none;">1</span></button>
+                    </div>
+                    <div class="login-panel" id="panel-password" role="tabpanel" aria-labelledby="tab-password">
+                    <div class="form-row">
                     <label for="login-account">小米账号:</label>
                     <input id="login-account" class="setting-input" type="text" placeholder="小米 ID 或手机号" autocomplete="username" />
                     </div>
@@ -117,12 +132,16 @@
                     <input id="login-password" class="setting-input" type="password" placeholder="小米账号密码" autocomplete="current-password" />
                     </div>
                     <div class="form-row">
+                    <label>&nbsp;</label>
                     <button class="option-inline" id="login-submit" type="button">
                     <span class="material-icons" aria-hidden="true">login</span>
                     <span>登录</span>
                     </button>
                     </div>
-                    <div class="form-row" id="verify-box" style="display:none;">
+                    </div>
+                    <div class="login-panel" id="panel-verify" role="tabpanel" aria-labelledby="tab-verify"
+                    style="display:none;">
+                    <div class="form-row">
                     <label id="verify-label">短信验证码:</label>
                     <div id="verify-input-row" style="display:flex;gap:8px;">
                     <input id="verify-code" class="setting-input" type="text" inputmode="numeric" placeholder="请输入验证码" autocomplete="one-time-code" />
@@ -131,19 +150,24 @@
                     <span>提交</span>
                     </button>
                     </div>
-                    <div id="verify-status" style="margin-top:6px;color:#666;"></div>
                     </div>
                     <div class="form-row">
-                    <label>或用米家 App 扫描二维码登录:</label>
-                    <div id="qrcode-box" style="display:none; text-align:center;">
-                    <img id="qrcode-img" alt="登录二维码"
-                    style="width:220px;height:220px;background:#fff;padding:8px;border:1px solid #ddd;border-radius:8px;" />
-                    <div id="qrcode-status" style="margin-top:8px;color:#666;">正在获取二维码…</div>
+                    <label>&nbsp;</label>
+                    <div class="verify-status-line" id="verify-status">尚未发起验证</div>
                     </div>
-                    <button class="option-inline" id="show-qrcode" type="button">
-                    <span class="material-icons" aria-hidden="true">qr_code</span>
-                    <span>刷新二维码</span>
+                    <div class="form-row">
+                    <label>&nbsp;</label>
+                    <div class="verify-actions">
+                    <button class="option-inline" id="verify-resend" type="button">
+                    <span class="material-icons" aria-hidden="true">refresh</span>
+                    <span>重新发送验证码</span>
                     </button>
+                    <button class="option-inline option-ghost" id="verify-back" type="button">
+                    <span class="material-icons" aria-hidden="true">arrow_back</span>
+                    <span>返回账号密码</span>
+                    </button>
+                    </div>
+                    </div>
                     </div>
                     </div>
                     </div>
