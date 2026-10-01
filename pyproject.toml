@@ -1,6 +1,6 @@
 [project]
 name = "xiaomusic"
-version = "0.6.1"
+version = "0.6.2"
 description = "Play Music with xiaomi AI speaker"
 authors = [
 {name = "涵曦", email = "im.hanxi@gmail.com"},
@@ -15,7 +15,10 @@ dependencies = [
     "pillow>=10.4.0",
     "python-multipart>=0.0.12",
     "pyjwt>=2.10.1",
-    "miservice-fork",
+    # 必须用 miservice（Yonsm/MiService）而不是 miservice-fork：
+    # 后者最新只有 2.9.3，MiAccount 没有 otp_callback，
+    # 而 login_flow._new_account() 需要它来支持短信验证码登录。
+    "miservice>=3.0.1,<4.0.0",
     "pycryptodome>=3.23.0"
 ]
 requires-python = ">=3.10"
