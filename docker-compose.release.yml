@@ -1,0 +1,49 @@
+# 服务器部署用：只拉取已发布的镜像，不在目标机上构建。
+#
+# 用法（参数也可以写进同目录的 .env，Compose 会自动读取）：
+#
+#   XIAOMUSIC_IMAGE=ghcr.io/xiaoguei8888/xiaomusic:latest \
+#   XIAOMUSIC_MUSIC_DIR=/docker/filebrowser/srv/xiaomusic/music \
+#   XIAOMUSIC_CONF_DIR=/docker/filebrowser/srv/xiaomusic/conf \
+#   XIAOMUSIC_HOSTNAME=http://<音箱能访问到的地址> \
+#   docker compose -f docker-compose.release.yml up -d
+#
+# 升级：docker compose -f docker-compose.release.yml pull && ... up -d
+# 多架构（amd64/arm64/armv7）由镜像 manifest 自动匹配，无需指定平台。
+
+services:
+  xiaomusic:
+    image: ${XIAOMUSIC_IMAGE:-ghcr.io/xiaoguei8888/xiaomusic:latest}
+    container_name: ${XIAOMUSIC_CONTAINER:-xiaomusic}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    ports:
+      # Web 管理页与 API
+      - "${XIAOMUSIC_PORT:-8090}:${XIAOMUSIC_PORT:-8090}"
+      # 音箱拉取音频的端口，必须与 XIAOMUSIC_PUBLIC_PORT 一致。
+      # 少 publish 这一条会表现为「音箱放不出声」。
+      - "${XIAOMUSIC_PUBLIC_PORT:-58090}:${XIAOMUSIC_PUBLIC_PORT:-58090}"
+    volumes:
+      # 这两个目录必须指向已有的数据，否则会丢配置与歌单
+      - ${XIAOMUSIC_MUSIC_DIR:-./music}:/app/music
+      - ${XIAOMUSIC_CONF_DIR:-./conf}:/app/conf
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MI_USER: ${MI_USER:-}
+      MI_PASS: ${MI_PASS:-}
+      MI_DID: ${MI_DID:-}
+      # 必须填音箱能访问到的地址；留空则用应用默认值
+      XIAOMUSIC_HOSTNAME: ${XIAOMUSIC_HOSTNAME:-http://192.168.2.5}
+      XIAOMUSIC_PORT: ${XIAOMUSIC_PORT:-8090}
+      XIAOMUSIC_PUBLIC_PORT: ${XIAOMUSIC_PUBLIC_PORT:-58090}
+      XIAOMUSIC_MUSIC_PATH: /app/music
+      XIAOMUSIC_CONF_PATH: /app/conf
+      XIAOMUSIC_ENABLE_PULL_ASK: ${XIAOMUSIC_ENABLE_PULL_ASK:-true}
+      XIAOMUSIC_DISABLE_HTTPAUTH: ${XIAOMUSIC_DISABLE_HTTPAUTH:-true}
+      XIAOMUSIC_VERBOSE: ${XIAOMUSIC_VERBOSE:-false}
+    # 镜像自带 HEALTHCHECK（scripts/healthcheck.py）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

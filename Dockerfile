@@ -59,6 +59,8 @@ RUN pdm install --prod --no-editable -v
 # 复制应用代码
 COPY xiaomusic/ ./xiaomusic/
 COPY xiaomusic.py .
+# 容器健康检查脚本（HEALTHCHECK 与 docker-compose 都调用它）
+COPY scripts/healthcheck.py ./healthcheck.py
 
 # -------------------------- 运行阶段 --------------------------
 # 根据TARGETPLATFORM自动选择对应的runner阶段
@@ -84,6 +86,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv ./.venv
 COPY --from=builder /app/xiaomusic/ ./xiaomusic/
 COPY --from=builder /app/xiaomusic.py .
+COPY --from=builder /app/healthcheck.py ./healthcheck.py
 COPY --from=builder /app/xiaomusic/__init__.py /base_version.py
 
 # 创建FFmpeg软链接目录（兼容不同系统的ffmpeg路径）
@@ -101,6 +104,11 @@ EXPOSE 8090
 # 设置环境变量
 ENV TZ=Asia/Shanghai
 ENV PATH=/app/.venv/bin:/usr/local/bin:$PATH
+
+# 健康检查：探 127.0.0.1 上由 scripts/healthcheck.py 解析出的端口
+# （conf/setting.json > XIAOMUSIC_PORT > 8090），任何非 5xx 响应都算存活
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["python3", "/app/healthcheck.py"]
 
 # 直接启动xiaomusic应用
 CMD ["/app/.venv/bin/python3", "/app/xiaomusic.py"]

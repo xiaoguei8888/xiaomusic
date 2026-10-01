@@ -1,0 +1,58 @@
+# 构建上下文白名单式瘦身：Dockerfile 只需要
+#   pyproject.toml / README.md / xiaomusic/(源码包) / xiaomusic.py / scripts/healthcheck.py
+# 其余一律不进上下文——尤其是 conf/（含小米账号、cookie、设备 token）。
+
+# 版本控制与编辑器
+.git
+.gitignore
+.github
+.idea
+.vscode
+.DS_Store
+
+# Python 虚拟环境与缓存
+# 注意：.dockerignore 里不带斜杠的模式只匹配根目录，
+# 所以包内的 __pycache__ / *.pyc 必须写成 **/xxx 才会被排除
+.venv
+venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.so
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+.pdm-build
+.pdm-python
+
+# 测试与覆盖率
+test
+.coverage
+.coverage.*
+htmlcov
+coverage.xml
+
+# 文档
+docs
+
+# 运行时数据（敏感 + 体积大）
+conf
+music
+cache
+tmp
+ffmpeg
+
+# 日志
+*.log
+*.log.*
+xiaomusic.log.txt*
+00-plugin_debug.log
+
+# 部署时用的本地文件，不需要进镜像
+docker-compose.yml
+Dockerfile
+.dockerignore
+.env
+.env.*
