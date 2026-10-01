@@ -105,12 +105,16 @@
                                 style="display:none;">
                                 <div class="form-item">
                                     <label for="verify-code" id="verify-label">短信验证码:</label>
-                                    <input id="verify-code" type="text" inputmode="numeric" autocomplete="one-time-code"
-                                        placeholder="请输入收到的验证码" />
-                                    <div style="margin-top:8px;">
+                                    <div class="verify-code-row" id="verify-input-row">
+                                        <input id="verify-code" class="setting-input" type="text" inputmode="numeric" autocomplete="one-time-code"
+                                            placeholder="请输入收到的验证码" />
+                                        <button class="option-inline mini-button" id="verify-resend" type="button">
+                                            <span class="material-icons" aria-hidden="true">refresh</span>
+                                            <span>重新发送</span>
+                                        </button>
                                         <button class="option-inline mini-button" id="verify-submit" type="button">
                                             <span class="material-icons" aria-hidden="true">verified</span>
-                                            <span>提交验证码</span>
+                                            <span>提交</span>
                                         </button>
                                     </div>
                                 </div>
@@ -118,20 +122,6 @@
                                 <div class="form-item">
                                     <label>&nbsp;</label>
                                     <div class="verify-status-line" id="verify-status">尚未发起验证</div>
-                                </div>
-
-                                <div class="form-item">
-                                    <label>&nbsp;</label>
-                                    <div class="verify-actions">
-                                        <button class="option-inline mini-button" id="verify-resend" type="button">
-                                            <span class="material-icons" aria-hidden="true">refresh</span>
-                                            <span>重新发送验证码</span>
-                                        </button>
-                                        <button class="option-inline mini-button" id="verify-back" type="button">
-                                            <span class="material-icons" aria-hidden="true">arrow_back</span>
-                                            <span>返回账号密码</span>
-                                        </button>
-                                    </div>
                                 </div>
                             </div>
                         </div>

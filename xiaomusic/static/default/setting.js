@@ -492,6 +492,8 @@ function initSettingPanel() {
       let $btn = $("#login-submit").prop("disabled", true);
       clearVerifyBadge();
       stopVerifyCountdown();
+      // 新的登录尝试意味着上一轮验证提示已过期，避免用户看到自相矛盾的状态
+      $("#verify-status").text("尚未发起验证");
       $("#login-status").text("登录中...");
       $.ajax({
         url: "/api/login/start",
@@ -585,16 +587,6 @@ function initSettingPanel() {
     // tab 切换：纯 UI，零网络请求（防止误触发重发短信 → 180s 限流）
     $("#tab-password").on("click", function () { switchLoginTab("password"); });
     $("#tab-verify").on("click", function () { switchLoginTab("verify"); });
-    $("#verify-back").on("click", function () { switchLoginTab("password"); });
-
-    // 键盘左右方向键在 tab 间移动（WAI-ARIA tabs 模式）
-    $(".login-tab").on("keydown", function (e) {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      e.preventDefault();
-      const next = $(this).attr("id") === "tab-password" ? "verify" : "password";
-      switchLoginTab(next);
-      $("#tab-" + next).trigger("focus");
-    });
 
     // 重发是显式的用户动作：只有点这个按钮才会重新请求短信。
     $("#verify-resend").on("click", function () {

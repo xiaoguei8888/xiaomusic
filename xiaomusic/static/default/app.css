@@ -2147,21 +2147,34 @@ body.sheet-open {
   vertical-align: middle;
 }#setting .login-panel {
   padding-top: 4px;
-}#setting .verify-status-line {
-  color: #666;
+}/* 「尚未发起验证」这类提示是次要信息，用小字号 + 警告色，
+   与需要用户注意的红色错误文案区分开。 */
+#setting .verify-status-line {
+  color: #e65100;
+  font-size: 12px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }#setting .verify-countdown {
   margin-top: 4px;
   color: #ef6c00;
   font-size: 13px;
-}#setting .verify-actions {
+}/* 验证码输入行：输入框 + 「重新发送」+ 「提交」三者同一行。
+   输入框吃掉剩余宽度，两个按钮不换行也不被压缩。 */
+#setting .verify-code-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-}/* 「提交」按钮在窄容器里会折成两行（实测 760px 视口即出现），
+  flex-wrap: nowrap;
+}
+#setting .verify-code-row .setting-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+/* 「提交」按钮在窄容器里会折成两行（实测 760px 视口即出现），
    按钮内的文字与图标都必须禁止换行。 */
 #setting .login-panel .option-inline,
-#setting .verify-actions .option-inline {
+#setting .verify-code-row .option-inline {
   white-space: nowrap;
   flex-shrink: 0;
 }@keyframes fadeInUp {#setting from {
@@ -2515,7 +2528,23 @@ body.sheet-open {
 }#setting .checkbox-label:hover {
   background-color: #e9ecef;
   border-color: #007bff;
-}#setting .material-icons-outlined {
+}
+
+/* 设置面板按钮内的图标统一为白色。
+   站点主题给按钮的是蓝底白字，但 Material Icons 的字形靠 color 属性上色，
+   全局 .material-icons 的默认色会让图标在蓝底上变成深色、几乎看不见
+   （实测「完成验证（发送短信）」按钮上的 sms 图标是深绿色）。
+   按 #setting 的既有作用域写法覆盖，不影响播放器区域的图标。 */
+#setting .setting-panel button .material-icons,
+#setting .accordion-body button .material-icons,
+#setting .header-buttons button .material-icons,
+#setting .setting-footer button .material-icons,
+#setting .button-grid button .material-icons,
+#setting .community-buttons-grid button .material-icons {
+  color: #fff;
+}
+
+#setting .material-icons-outlined {
   font-family: "Material Icons Outlined";
   font-weight: normal;
   font-style: normal;

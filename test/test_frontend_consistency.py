@@ -64,7 +64,6 @@ TAB_IDS = {
     "panel-password",
     "panel-verify",
     "verify-resend",
-    "verify-back",
 }
 
 # 各页面独有的元素，不要求跨页面存在
@@ -225,6 +224,85 @@ def test_login_tab_overrides_theme_button_style():
     )
 
 
+def test_verify_row_keeps_input_resend_submit_on_one_line():
+    """输入框、「重新发送」、「提交」必须在同一行，且顺序不能变。
+
+    用户明确要求三者同行、重发在输入框右侧、提交在最右。
+    曾经「提交」在 760px 视口会折成两行，这里同时锁死容器与按钮两端。
+    """
+    css = read("app.css")
+    m = re.search(r"#setting \.verify-code-row\s*\{(.*?)\}", css, flags=re.S)
+    assert m, "app.css 缺少 #setting .verify-code-row 规则"
+    block = m.group(1)
+    assert "display: flex" in block, "验证码行不是 flex 布局"
+    assert "flex-wrap: nowrap" in block, "验证码行允许换行，三个元素会被拆到多行"
+
+    for page in PAGES:
+        html = read(page)
+        row = re.search(
+            r'<div class="verify-code-row"[^>]*>(.*?)</div>\s*</div>', html, flags=re.S
+        )
+        assert row, f"{page} 缺少 .verify-code-row 容器"
+        body = row.group(1)
+        order = [
+            body.find('id="verify-code"'),
+            body.find('id="verify-resend"'),
+            body.find('id="verify-submit"'),
+        ]
+        assert all(i >= 0 for i in order), f"{page} 验证码行缺少输入框/重发/提交"
+        assert order == sorted(order), (
+            f"{page} 验证码行顺序应为 输入框 → 重新发送 → 提交，实际下标 {order}"
+        )
+
+
+def test_resend_copy_is_short_and_back_button_removed():
+    """重发按钮文案改为「重新发送」，「返回账号密码」按钮按用户要求删除。"""
+    for page in PAGES:
+        html = read(page)
+        assert "重新发送" in html, f"{page} 缺少重发按钮"
+        assert "重新发送验证码" not in html, f"{page} 重发按钮文案过长，应为「重新发送」"
+        assert "verify-back" not in html, f"{page} 仍有已删除的返回按钮"
+
+    js = read("setting.js")
+    assert "verify-back" not in js, "setting.js 仍绑定已删除的返回按钮"
+
+
+def test_idle_verify_status_uses_small_warning_text():
+    """「尚未发起验证」提示要更小、用警告色，而不是普通正文色。"""
+    css = read("app.css")
+    m = re.search(r"#setting \.verify-status-line\s*\{(.*?)\}", css, flags=re.S)
+    assert m, "app.css 缺少 #setting .verify-status-line 规则"
+    block = m.group(1)
+    assert "font-size: 12px" in block, "提示文字未缩小"
+    assert "color: #e65100" in block, "提示文字未使用警告色"
+
+
+def test_settings_button_icons_are_white():
+    """设置面板按钮内的图标必须是白色，否则蓝底上的深色图标看不清。
+
+    实测缺陷：「完成验证（发送短信）」按钮上的 sms 图标是深绿色，
+    在蓝色按钮上几乎不可见。jsdom 不做样式计算，只能校验样式表本身。
+    """
+    css = read("app.css")
+    m = re.search(
+        r"#setting \.setting-panel button \.material-icons,\s*\n"
+        r"#setting \.accordion-body button \.material-icons,\s*\n"
+        r"#setting \.header-buttons button \.material-icons,"
+        r"(.*?)\}",
+        css,
+        flags=re.S,
+    )
+    assert m, "app.css 缺少设置面板按钮图标的统一颜色规则"
+    assert "color: #fff" in m.group(1), "按钮内图标未设置成白色"
+    # 必须同时覆盖两类页面：index.html 用 .setting-panel，
+    # setting.html 的 accordion-body 没有 setting-panel 类。
+    # 真实浏览器实测：漏掉 .accordion-body 时 setting.html 的图标是 rgb(85,85,85)。
+    head = m.group(0)
+    assert ".setting-panel button .material-icons" in head
+    assert ".accordion-body button .material-icons" in head
+    assert ".header-buttons button .material-icons" in head
+
+
 def test_submit_button_does_not_wrap():
     """「提交」按钮在窄容器里会折成两行，必须禁止换行。
 
@@ -233,7 +311,7 @@ def test_submit_button_does_not_wrap():
     """
     css = read("app.css")
     m = re.search(
-        r"#setting \.login-panel \.option-inline,\s*\n#setting \.verify-actions \.option-inline\s*\{(.*?)\}",
+        r"#setting \.login-panel \.option-inline,\s*\n#setting \.verify-code-row \.option-inline\s*\{(.*?)\}",
         css,
         flags=re.S,
     )
