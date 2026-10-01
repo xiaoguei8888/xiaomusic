@@ -293,12 +293,23 @@ class Config:
         filename = os.path.join(self.conf_path, "setting.json")
         return filename
 
-    def _conf_dir(self) -> str:
-        # 兼容旧配置 conf_path 为空的情况，与 getsettingfile 的兜底逻辑一致
+    def ensure_conf_dir(self) -> str:
+        """把 conf_path 规整成可用的目录，并确保它存在。
+
+        conf_path 允许来自 conf/setting.json，旧配置里可能是空字符串。
+        任何要用 conf_path 拼路径的地方都必须先经过这里，否则会拼出
+        「没有目录部分」的路径：写盘时 os.path.dirname() 为空字符串，
+        临时文件创建失败，auth.json 静默存不下来 —— 表现为「验证码提交
+        成功但前端一直等待验证结果」，重启后凭据全丢。
+        """
         if not self.conf_path:
             self.conf_path = "conf"
         os.makedirs(self.conf_path, exist_ok=True)
         return self.conf_path
+
+    def _conf_dir(self) -> str:
+        # 兼容旧配置 conf_path 为空的情况，与 getsettingfile 的兜底逻辑一致
+        return self.ensure_conf_dir()
 
     @property
     def tag_cache_path(self) -> str:

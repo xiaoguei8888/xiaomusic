@@ -32,6 +32,11 @@ class AuthManager:
     def __init__(self, config, log, device_manager):
         self.config = config
         self.log = log
+        # 一律走 config 的兜底目录解析：conf_path 可能来自 conf/setting.json，
+        # 而那里允许是空字符串（旧配置遗留）。裸用 os.path.join("", "auth.json")
+        # 得到的是没有目录部分的相对路径，写盘时 os.path.dirname() 为空，
+        # 于是 token 永远存不下来 —— 表现为「验证码提交成功但一直等待验证结果」。
+        self.config.ensure_conf_dir()
         self.mi_token_home = os.path.join(self.config.conf_path, ".mi.token")
 
         self._init_lock = asyncio.Lock()
