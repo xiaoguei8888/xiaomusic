@@ -485,8 +485,8 @@ function initSettingPanel() {
         if (!res) return;
         if (sidDone(res, verifySid)) {
           clearVerifyBadge();
-          finishVerify("验证成功，正在刷新页面...");
-          setTimeout(function () { location.reload(); }, 800);
+          finishVerify("✅ 验证成功，正在获取设备列表...");
+          applyLoginSuccess("✅ 验证成功，正在获取设备列表...");
         } else if (res.state === "cooldown") {
           finishVerify("请求过于频繁，请稍后再试");
         } else if (verifyFailed(res)) {
@@ -537,23 +537,19 @@ function initSettingPanel() {
         // 后端在需要二次验证时返回 state=pending，并带上待验证的 sid
         // （可能是 micoapi，也可能是 xiaomiio —— 后者决定设备列表能否拉到）。
         if (res.state === "pending") {
-          $("#login-status").text("需要短信验证，请查看「短信验证码」页");
+          $("#login-status").text("账号密码正确，小米要求二次验证 → 需要短信验证码");
           showVerifyBadge();
           switchLoginTab("verify");
           beginVerify(res.sid, res.method, res.waitSeconds);
           return;
         }
 
-        if (sidDone(res, "micoapi") && sidDone(res, "xiaomiio")) {
-          $("#login-status").text("登录成功，正在刷新页面...");
-          setTimeout(function () { location.reload(); }, 800);
-          return;
-        }
-
+        // micoapi 拿到就说明账号密码可用；xiaomiio 是否可用由 renderLoginStatus
+        // 如实呈现（需要短信验证时会给出入口）。
+        // 注意：这里**不能**再 location.reload() —— 那会把用户踢出设置面板、
+        // 回到首页，而且看不到任何登录结果。
         if (sidDone(res, "micoapi")) {
-          // micoapi 正常但 xiaomiio 未完成：设备列表依然不可用，交给 loadLoginStatus 如实呈现
-          $("#login-status").text("登录成功，正在刷新页面...");
-          setTimeout(function () { location.reload(); }, 800);
+          applyLoginSuccess();
           return;
         }
 
@@ -630,7 +626,10 @@ function initSettingPanel() {
 
       if (micoapiOk && xiaomiioOk) {
         // 两个 sid 都正常，设备列表才是真的可用
-        $status.text("✅ 已登录（" + (res.device_count || 0) + " 个设备）");
+        $status.text(
+          "✅ 账号可用，设备列表可用（" + (res.device_count || 0) +
+          " 个设备）｜无需短信验证"
+        );
         $("#login-verify-hint").hide();
         return;
       }
@@ -639,7 +638,9 @@ function initSettingPanel() {
         // 账号可登录，但 xiaomiio 未验证 → 设备列表一定拉不到。
         // 这里不能写「已登录（N 个设备）」，否则与「没找到小爱音箱」自相矛盾。
         // 关键是给用户一个能点的入口，而不是只告诉他「需完成验证」。
-        $status.text("⚠️ 账号已登录，但设备列表不可用");
+        $status.text(
+          "⚠️ 账号已登录，但设备列表不可用｜需要短信验证（设备列表由 xiaomiio 提供）"
+        );
         $("#login-verify-hint")
           .show()
           .off("click")
@@ -649,7 +650,9 @@ function initSettingPanel() {
         return;
       }
 
-      $status.text("⚠️ 未登录，请输入账号密码登录");
+      $status.text(
+        "⚠️ 未登录｜输入账号密码登录；只有小米要求二次验证时才需要短信验证码"
+      );
       $("#login-verify-hint").hide();
     }
 
@@ -660,6 +663,21 @@ function initSettingPanel() {
       }).fail(function () {
         $("#login-status").text("登录状态获取失败");
       });
+    }
+
+    /* 登录/验证成功后就地生效，不再整页刷新。
+     * /api/login/verify/check 会在服务端绑定服务、拉一次设备列表；
+     * 再用 reinitForDevice() 重建首页的设备下拉（md.js 的全局函数，
+     * 独立设置页 setting.html 没有它），最后重渲染登录状态。 */
+    function applyLoginSuccess(message) {
+      $("#login-status").text(message || "✅ 登录成功，正在获取设备列表...");
+      $.ajax({ url: "/api/login/verify/check", method: "POST" })
+        .always(function () {
+          if (typeof reinitForDevice === "function") {
+            reinitForDevice();
+          }
+          loadLoginStatus();
+        });
     }
 
     $("#use_music_audio_id").trigger("change");

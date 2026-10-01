@@ -363,6 +363,39 @@ def test_finish_verify_stops_polling_before_writing_text():
     assert "stopVerifyPolling" in body, "finishVerify 没有停止轮询，提示会被覆盖"
 
 
+
+def test_login_success_stays_on_settings_page():
+    """登录成功不能整页刷新把用户踢出设置面板。
+
+    实测缺陷：点「登录」成功后 800ms 无条件 location.reload()，
+    设置面板关闭、回到首页，而且没有任何登录结果提示。
+    """
+    js = strip_comments(read("setting.js"))
+    m = re.search(r"function startLogin\(\)\s*\{(.*?)\n    \}", js, flags=re.S)
+    assert m, "未找到 startLogin 函数"
+    body = m.group(1)
+    assert "applyLoginSuccess" in body, "登录成功后没有就地刷新状态"
+    assert "location.reload" not in body, "登录成功后仍整页刷新，用户会被踢出设置页"
+
+
+def test_verify_success_stays_on_settings_page():
+    """短信验证成功后同样留在设置页展示状态，而不是刷新走人。"""
+    js = strip_comments(read("setting.js"))
+    m = re.search(r"function pollLoginState\(\)\s*\{(.*?)\n    \}", js, flags=re.S)
+    assert m, "未找到 pollLoginState 函数"
+    assert "location.reload" not in m.group(1), "验证成功后仍整页刷新"
+
+
+def test_login_status_states_device_availability_and_sms_need():
+    """状态行必须同时说清「设备列表是否可用」和「需不需要短信验证」。"""
+    js = strip_comments(read("setting.js"))
+    m = re.search(r"function renderLoginStatus\(res\)\s*\{(.*?)\n    \}", js, flags=re.S)
+    assert m, "未找到 renderLoginStatus 函数"
+    body = m.group(1)
+    assert "设备列表可用" in body, "设备可用时没有明确表达"
+    assert "无需短信验证" in body, "没说清什么时候不需要短信验证"
+    assert "需要短信验证" in body, "没说清什么时候需要短信验证"
+
 def test_overdue_qr_copy_removed():
     """删了扫码入口就必须删掉指向它的文案，否则用户会去找不存在的功能。"""
     js = strip_comments(read("setting.js"))

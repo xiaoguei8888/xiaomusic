@@ -298,12 +298,28 @@ const WebPlayer = {
 };
 
 let lastMusicName = "";  // 上一首播放的歌曲名
+
+// 播放/暂停图标只反映「当前控制目标」的播放状态：
+// 本机播放（web_device）看 <audio> 元素，设备播放看 WebSocket 推送的 is_playing。
+// 以前只有本机播放路径会改图标，设备播放时它永远是 play_circle_outline。
+function isWebDeviceSelected() {
+  return $("#did").val() === "web_device";
+}
+
+function setPlayPauseIcon(playing) {
+  const icon = document.getElementById("playPauseIcon");
+  if (!icon) return;
+  const want = playing ? "pause_circle_outline" : "play_circle_outline";
+  if (icon.textContent !== want) {
+    icon.textContent = want;
+  }
+}
+
 // 本机播放：加载并播放指定歌曲
 function loadAndPlayMusic(musicName) {
   console.log("loadAndPlayMusic:", musicName);
 
   const audioElement = document.getElementById("audio");
-  const playMusicIcon = document.getElementById('playPauseIcon');
   // 2. 判断：切换了新歌曲 → 重新加载播放
   if (musicName !== lastMusicName) {
     // 停止上一首歌曲
@@ -348,12 +364,12 @@ function loadAndPlayMusic(musicName) {
       isPlaying = true;
       lastMusicName = musicName;
       // 切换为暂停图标
-      playMusicIcon.textContent = 'pause_circle_outline';
+      setPlayPauseIcon(true);
 
       // 监听：歌曲播放完毕 → 自动切回播放图标
       audioElement.addEventListener("ended", function () {
       isPlaying = false;
-      playMusicIcon.textContent = "play_circle_outline";
+      setPlayPauseIcon(false);
       });
     }).fail(function () {
       alert("请求歌曲信息失败！");
@@ -367,13 +383,13 @@ function loadAndPlayMusic(musicName) {
     // 当前正在播放 → 暂停
     audioElement.pause();
     isPlaying = false;
-    playMusicIcon.textContent = "play_circle_outline";
+    setPlayPauseIcon(false);
   } else {
     // 当前已暂停 → 继续播放
     audioElement.play();
     isPlaying = true;
     // 切换为暂停图标
-    playMusicIcon.textContent = 'pause_circle_outline';
+    setPlayPauseIcon(true);
   }
 
 }
@@ -1663,6 +1679,10 @@ function startWebSocket(did, token) {
       if (data.ret !== "OK") return;
 
       isPlaying = data.is_playing;
+      // 设备播放状态由后端推送；本机播放时图标由 <audio> 事件负责
+      if (!isWebDeviceSelected()) {
+        setPlayPauseIcon(isPlaying);
+      }
       let cur_music = data.cur_music || "";
 
       $("#playering-music").text(
@@ -1813,6 +1833,12 @@ function updateWebPlayingUI() {
 
   const isPlaying = !audioElement.paused;
   const statusText = isPlaying ? "【播放中】" : "【暂停】";
+
+  // 本机播放时图标跟随 <audio>（play/pause/ended/停止都会走到这里）；
+  // 设备播放时由 WebSocket 推送负责，避免两边互相覆盖。
+  if (isWebDeviceSelected()) {
+    setPlayPauseIcon(isPlaying);
+  }
 
   $("#playering-music").text(statusText + (currentMusic || "无"));
 }
