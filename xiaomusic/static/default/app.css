@@ -1505,6 +1505,54 @@ body.sheet-open {
   font-size: 18px;
 }
 
+/* 抽屉（index.html 的 #panel-settings）里的保存按钮。
+   设置抽屉与 setting.html 共用 setting.js，两者都必须有 .save-button，
+   否则改完设置无处提交。 */
+.sheet-save {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 var(--spacing-md);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.sheet-save .material-icons {
+  font-size: 18px;
+}
+
+.sheet-save:hover {
+  background: var(--primary-light);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+/* 用户实际改过内容（JS 加 is-dirty）→ 高亮提醒尚未保存 */
+.sheet-save.is-dirty {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.sheet-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .sheet-save span:not(.material-icons) {
+    display: none;
+  }
+}
+
 .sheet-body {
   flex: 1 1 auto;
   min-height: 0;

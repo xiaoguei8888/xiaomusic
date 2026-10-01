@@ -183,7 +183,19 @@ function initSettingPanel() {
     });
 
 
-    $(".save-button").on("click", () => {
+    /* 保存按钮：index.html 的设置在抽屉（.sheet-save）里，setting.html 的在页头。
+     * 两个页面共用同一个 .save-button，任何渲染设置面板的页面都必须有它 ——
+     * 历史上 index.html 整块搬入了设置面板却漏掉按钮，用户改完配置无处保存。 */
+    const $saveBtn = $(".save-button");
+    const $saveBtnLabel = $saveBtn.find("span").not(".material-icons");
+
+    // 只有用户真实编辑才会触发 input 事件；脚本里的 .val() / .trigger("change") 不会，
+    // 因此不会在初始化时误标「未保存」。
+    $root.on("input", "input, select, textarea", function () {
+      $saveBtn.addClass("is-dirty");
+    });
+
+    $saveBtn.on("click", () => {
       var setting = $("#setting");
       var inputs = setting.find("input, select, textarea");
       var data = {};
@@ -197,17 +209,24 @@ function initSettingPanel() {
       data["mi_did"] = did_list;
       console.log(data);
 
+      const oldText = $saveBtnLabel.text();
+      $saveBtn.prop("disabled", true);
+      $saveBtnLabel.text("保存中...");
+
       $.ajax({
         type: "POST",
         url: "/savesetting",
         contentType: "application/json",
         data: JSON.stringify(data),
         success: (msg) => {
+          $saveBtn.removeClass("is-dirty");
           alert(msg);
           location.reload();
         },
         error: (msg) => {
           alert(msg);
+          $saveBtn.prop("disabled", false);
+          $saveBtnLabel.text(oldText);
         },
       });
     });

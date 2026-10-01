@@ -280,6 +280,45 @@ def test_idle_verify_status_uses_small_warning_text():
     assert "color: #e65100" in block, "提示文字未使用警告色"
 
 
+def test_save_button_exists_on_every_settings_page():
+    """渲染设置面板的页面必须有 .save-button，否则用户改完配置无处提交。
+
+    实测缺陷：index.html 把整块设置面板搬进了抽屉（.sheet），却没带上
+    setting.html 页头里的「保存配置」按钮。setting.js 只绑定 .save-button，
+    于是首页抽屉里改「播放列表口令」等设置点不了保存 —— 面板看起来是只读的。
+    """
+    for page in PAGES:
+        html = read(page)
+        assert 'id="setting"' in html, f"{page} 不再渲染设置面板，请更新本测试"
+        assert re.search(r'class="[^"]*\bsave-button\b', html), (
+            f"{page} 渲染设置面板但缺少 .save-button，用户改完设置无法保存"
+        )
+
+
+def test_save_handler_is_bound_and_reports_busy_state():
+    """点保存必须真的提交，且请求期间禁用按钮防止重复提交。"""
+    js = strip_comments(read("setting.js"))
+    assert '$(".save-button")' in js, "setting.js 未取到保存按钮"
+    m = re.search(r'\$saveBtn\.on\("click".*?\n    \}\);', js, flags=re.S)
+    assert m, "未找到保存按钮的点击处理块"
+    body = m.group(0)
+    assert 'url: "/savesetting"' in body, "保存按钮未提交到 /savesetting"
+    assert 'prop("disabled", true)' in body, "提交期间未禁用按钮，可能重复提交"
+    assert 'alert(msg)' in body, "保存失败时未把后端信息提示给用户"
+
+
+def test_settings_dirty_hint_only_on_user_input():
+    """未保存高亮只能由用户的 input 事件触发。
+
+    脚本初始化时会 .val() 和 .trigger("change")（自动填 hostname/端口等），
+    若监听 change 会在打开面板时就误报「有未保存的修改」。
+    """
+    js = strip_comments(read("setting.js"))
+    m = re.search(r'\$root\.on\("input", "input, select, textarea".*?\n    \}\);', js, flags=re.S)
+    assert m, "setting.js 未在设置面板上做脏检查"
+    assert 'addClass("is-dirty")' in m.group(0), "编辑后未高亮保存按钮"
+
+
 def test_settings_button_icons_are_white():
     """设置面板按钮内的图标必须是白色，否则蓝底上的深色图标看不清。
 
