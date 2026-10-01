@@ -2105,23 +2105,31 @@ body.sheet-open {
   gap: 4px;
   margin: 4px 0 12px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-}#setting .login-tab {
+}/* 站点主题会给 button 上蓝底白字，tab 必须显式覆盖，
+   否则未选中 tab 会变成蓝底灰字（在真实浏览器中几乎看不清）。 */
+#setting .login-tab,
+#setting .login-tab:not(.is-active) {
   position: relative;
   padding: 8px 14px;
   border: none;
-  background: transparent;
-  color: #666;
+  background: transparent !important;
+  color: #666 !important;
+  box-shadow: none !important;
   font-size: 14px;
+  font-weight: 400;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  border-radius: 0;
 }#setting .login-tab:hover {
-  color: #1976d2;
+  color: #1976d2 !important;
+  background: rgba(25, 118, 210, 0.06) !important;
 }#setting .login-tab:focus-visible {
   outline: 2px solid #1976d2;
   outline-offset: -2px;
 }#setting .login-tab.is-active {
-  color: #1976d2;
+  color: #1976d2 !important;
+  background: transparent !important;
   border-bottom-color: #1976d2;
   font-weight: 600;
 }#setting .login-tab-badge {
@@ -2150,6 +2158,12 @@ body.sheet-open {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}/* 「提交」按钮在窄容器里会折成两行（实测 760px 视口即出现），
+   按钮内的文字与图标都必须禁止换行。 */
+#setting .login-panel .option-inline,
+#setting .verify-actions .option-inline {
+  white-space: nowrap;
+  flex-shrink: 0;
 }@keyframes fadeInUp {#setting from {
     opacity: 0;
     transform: translateY(15px);

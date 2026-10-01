@@ -196,6 +196,53 @@ def test_verify_resend_requires_explicit_click():
     assert js.count("requestVerify(") >= 2, "requestVerify 定义/调用缺失"
 
 
+def test_login_tab_overrides_theme_button_style():
+    """tab 必须显式覆盖主题的 button 蓝底白字。
+
+    实测缺陷：app.css 里 `#setting .setting-panel button` 给了蓝底白字，
+    未选中的 tab 因此变成「蓝底灰字」，在真实浏览器里几乎看不清
+    （jsdom 不做样式计算，纯 DOM 测试抓不到，必须检查样式表本身）。
+    """
+    css = read("app.css")
+    # 基础 tab 规则（含 :not(.is-active) 变体）到下一个选择器为止
+    m = re.search(
+        r"#setting \.login-tab,\s*\n#setting \.login-tab:not\(\.is-active\)\s*\{(.*?)\}",
+        css,
+        flags=re.S,
+    )
+    assert m, "app.css 缺少 #setting .login-tab 基础样式规则"
+    block = m.group(1)
+    assert "background: transparent !important" in block, (
+        "tab 未用 !important 覆盖主题的按钮背景色，会变成蓝底灰字"
+    )
+    assert "color: #666 !important" in block, "tab 未覆盖主题的按钮文字颜色"
+
+    # 选中态同样要覆盖背景，否则主题蓝底会盖掉 transparent
+    m2 = re.search(r"#setting \.login-tab\.is-active\s*\{(.*?)\}", css, flags=re.S)
+    assert m2, "app.css 缺少 #setting .login-tab.is-active 样式"
+    assert "background: transparent !important" in m2.group(1), (
+        "选中态 tab 未覆盖主题按钮背景色"
+    )
+
+
+def test_submit_button_does_not_wrap():
+    """「提交」按钮在窄容器里会折成两行，必须禁止换行。
+
+    注意断言必须落在具体规则块内：整个文件里别处也有 nowrap，
+    断言全文会让这条测试永远通过（突变测试已验证过这个疏漏）。
+    """
+    css = read("app.css")
+    m = re.search(
+        r"#setting \.login-panel \.option-inline,\s*\n#setting \.verify-actions \.option-inline\s*\{(.*?)\}",
+        css,
+        flags=re.S,
+    )
+    assert m, "app.css 缺少登录面板按钮的 nowrap 规则"
+    block = m.group(1)
+    assert "white-space: nowrap" in block, "提交按钮未禁止换行，文字会折成两行"
+    assert "flex-shrink: 0" in block, "提交按钮未禁止收缩，窄容器会被压窄而折行"
+
+
 def test_overdue_qr_copy_removed():
     """删了扫码入口就必须删掉指向它的文案，否则用户会去找不存在的功能。"""
     js = strip_comments(read("setting.js"))
