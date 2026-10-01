@@ -16,17 +16,26 @@ from xiaomusic.core.events import (  # noqa: E402
     TRACK_CHANGED,
     EventBus,
 )
-from xiaomusic.core.state import DeviceStateStore, PlayerSnapshot, StateStore  # noqa: E402
+from xiaomusic.core.state import (  # noqa: E402
+    DeviceStateStore,
+    PlayerSnapshot,
+    StateStore,
+)
 
 
 def _recorder():
     bus = EventBus()
     events = []
-    bus.subscribe(TRACK_CHANGED, lambda **kw: events.append(("track", kw.get("cur_music"))))
     bus.subscribe(
-        PLAYER_STATE_CHANGED, lambda **kw: events.append(("state", kw.get("is_playing")))
+        TRACK_CHANGED, lambda **kw: events.append(("track", kw.get("cur_music")))
     )
-    bus.subscribe(PLAYLIST_CHANGED, lambda **kw: events.append(("playlist", kw.get("playlist"))))
+    bus.subscribe(
+        PLAYER_STATE_CHANGED,
+        lambda **kw: events.append(("state", kw.get("is_playing"))),
+    )
+    bus.subscribe(
+        PLAYLIST_CHANGED, lambda **kw: events.append(("playlist", kw.get("playlist")))
+    )
     return bus, events
 
 

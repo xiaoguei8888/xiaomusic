@@ -194,7 +194,11 @@ class ConversationPoller:
             for part in COOKIE_TEMPLATE.split(";")
             if part.strip()
         ]
-        missing = [name for name in ("deviceId", "userId", "serviceToken") if name not in cookie_dict]
+        missing = [
+            name
+            for name in ("deviceId", "userId", "serviceToken")
+            if name not in cookie_dict
+        ]
         if missing and self._last_error != "cookie:" + ",".join(missing):
             self.log.warning(
                 "[CONV] 对话接口 cookie 缺少 %s，将可能返回 400；"

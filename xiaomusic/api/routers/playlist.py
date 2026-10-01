@@ -28,9 +28,7 @@ router = APIRouter(dependencies=[Depends(verification)])
 
 
 @router.get("/curplaylist")
-async def curplaylist(
-    did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+async def curplaylist(did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """当前播放列表"""
     if not xiaomusic.did_exist(did):
         return ""
@@ -131,9 +129,7 @@ async def playlistupdatemusic(
 
 
 @router.get("/playlistmusics")
-async def getplaylist(
-    name: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+async def getplaylist(name: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取歌单中所有歌曲"""
     ret, musics = xiaomusic.music_library.play_list_musics(name)
     return {

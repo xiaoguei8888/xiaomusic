@@ -70,7 +70,9 @@ def test_traverse_music_directory_respects_depth(config, make_music_file):
     assert deep[root] == [top]
 
 
-def test_traverse_music_directory_filters_excluded_and_unsupported(config, make_music_file):
+def test_traverse_music_directory_filters_excluded_and_unsupported(
+    config, make_music_file
+):
     keep = make_music_file("keep.mp3")
     make_music_file("skip_tmp/x.mp3")
     make_music_file("cover.jpg")
@@ -188,7 +190,10 @@ def test_calculate_tts_elapse_ignores_quotes_and_brackets():
 
 
 def test_find_key_by_partial_string():
-    assert find_key_by_partial_string({"下一首": "play_next"}, "帮我下一首吧") == "play_next"
+    assert (
+        find_key_by_partial_string({"下一首": "play_next"}, "帮我下一首吧")
+        == "play_next"
+    )
     assert find_key_by_partial_string({"x": "y"}, "无关") is None
 
 

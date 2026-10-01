@@ -179,15 +179,12 @@ class XiaoMusicDevice:
         offset = time.time() - self._start_time - self._paused_time
         return offset, duration
 
-
     async def get_cloud_status(self):
         """从云端拉取一次播放状态，归一化为秒并缓存快照"""
         if self.auth_manager.mina_service is None:
             return None
         try:
-            raw = await self.auth_manager.mina_service.player_get_status(
-                self.device_id
-            )
+            raw = await self.auth_manager.mina_service.player_get_status(self.device_id)
         except Exception as e:
             self.log.warning(f"get_cloud_status 请求失败: {e}")
             return None
@@ -263,14 +260,18 @@ class XiaoMusicDevice:
         cloud_playing = snap.get("status") == 1
 
         if self._local_play_at > self._local_pause_at:
-            if cloud_playing or (time.time() - self._local_play_at) < self.INTENT_CONFIRM_SEC:
+            if (
+                cloud_playing
+                or (time.time() - self._local_play_at) < self.INTENT_CONFIRM_SEC
+            ):
                 return True, snap
             return False, snap
 
         if self._local_pause_at > self._local_play_at:
-            if not cloud_playing or (
-                time.time() - self._local_pause_at
-            ) < self.INTENT_CONFIRM_SEC:
+            if (
+                not cloud_playing
+                or (time.time() - self._local_pause_at) < self.INTENT_CONFIRM_SEC
+            ):
                 return False, snap
             return True, snap
 
@@ -365,7 +366,6 @@ class XiaoMusicDevice:
         """播放歌曲（外部接口）"""
         self._last_cmd = "play"
         return await self._play(name=name, search_key=search_key)
-
 
     async def _play_internal(self, name="", search_key=""):
         """播放歌曲的内部统一实现
@@ -590,7 +590,6 @@ class XiaoMusicDevice:
 
         # 2. 真正安全的下发播放阶段
 
-
         # 4. 真正安全的下发播放阶段
         await self.group_force_stop_xiaoai()
         self.log.info(f"发送指令给小爱，开始播放: {url}")
@@ -640,7 +639,6 @@ class XiaoMusicDevice:
         # 只有发送指令成功 -> 质检出时长正常，才允许重置清零！
         self._play_failed_cnt = 0
 
-
         # 计算获取时长的执行耗时
         duration_execution_time = time.time() - self._start_time
         self.log.info(f"获取音乐时长耗时: {duration_execution_time:.3f} 秒")
@@ -660,7 +658,6 @@ class XiaoMusicDevice:
         # 如果当前歌曲大于 2 秒，则在播放 20 秒后悄悄预取下一首歌
         if sec > 20:
             await self.prefetch_next_song(20)
-
 
     async def do_tts(self, value):
         """执行TTS（文字转语音）"""
@@ -720,7 +717,6 @@ class XiaoMusicDevice:
                 f"is_playing:{is_playing} force:{force} ret:{ret}"
             )
 
-
     async def check_replay(self):
         """检查是否需要继续播放被打断的歌曲"""
         if self.is_playing:
@@ -734,7 +730,6 @@ class XiaoMusicDevice:
                 )
         else:
             self.log.info(f"不会继续播放歌曲. isplaying:{self.is_playing}")
-
 
     def _pick_index(self, index, direction, play_list_len):
         """按播放模式算出候选下标；无候选返回 None。"""
@@ -1271,7 +1266,6 @@ class XiaoMusicDevice:
         if name in music_list.get("所有歌曲", []):
             return "所有歌曲"
         return "全部"
-
 
     async def handle_selection(self, index):
         """处理用户选择第几个歌曲

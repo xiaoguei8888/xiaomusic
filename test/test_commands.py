@@ -30,7 +30,9 @@ class _Device:
 
 
 def _handler(config=None):
-    return CommandHandler(config=config or Config(), log=_Log(), xiaomusic_instance=None)
+    return CommandHandler(
+        config=config or Config(), log=_Log(), xiaomusic_instance=None
+    )
 
 
 def test_full_match():

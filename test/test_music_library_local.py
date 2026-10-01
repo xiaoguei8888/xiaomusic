@@ -277,10 +277,13 @@ def test_tag_cache_save_load_and_refresh(library, config):
     with open(config.tag_cache_path, encoding="utf-8") as f:
         assert json.load(f) == {}
 
+
 # --------------------------------------------------------------------------
 # 其余本地分支：例外兜底、tag 读写、命名冲突链、访问器
 # --------------------------------------------------------------------------
-def test_invalid_custom_playlist_json_does_not_break_scan(config, fake_log, make_music_file):
+def test_invalid_custom_playlist_json_does_not_break_scan(
+    config, fake_log, make_music_file
+):
     make_music_file("a.mp3")
     config.custom_play_list_json = "{not-json"
     lib = MusicLibrary(config, fake_log)
@@ -382,8 +385,13 @@ def test_set_music_tag_updates_cache_without_writing_file(
     make_music_file("a.mp3")
     library.gen_all_music_list()
     info = types.SimpleNamespace(
-        title="T", artist="A", album="AL", year="2024", genre="pop",
-        lyrics="lrc", picture="",
+        title="T",
+        artist="A",
+        album="AL",
+        year="2024",
+        genre="pop",
+        lyrics="lrc",
+        picture="",
     )
 
     assert library.set_music_tag("a", info) == "OK"
@@ -398,8 +406,13 @@ def test_set_music_tag_refuses_while_generating(library, make_music_file):
     library.gen_all_music_list()
     library._tag_generation_task = True
     info = types.SimpleNamespace(
-        title="T", artist="A", album="AL", year="2024", genre="pop",
-        lyrics="lrc", picture="",
+        title="T",
+        artist="A",
+        album="AL",
+        year="2024",
+        genre="pop",
+        lyrics="lrc",
+        picture="",
     )
 
     assert library.set_music_tag("a", info) == "Tag generation task running"
@@ -457,14 +470,13 @@ async def test_get_music_duration_undecodable_file_returns_zero(
     assert "a" not in library.all_music_tags  # 失败不写缓存
 
 
-async def test_get_music_duration_missing_file_returns_zero(
-    library, make_music_file
-):
+async def test_get_music_duration_missing_file_returns_zero(library, make_music_file):
     path = make_music_file("a.mp3")
     library.gen_all_music_list()
     os.remove(path)
 
     assert await library.get_music_duration("a") == 0
+
 
 # --------------------------------------------------------------------------
 # 已知缺陷回归（lead 已修：空匹配回退为原始输入；xfail 已转为断言）
@@ -475,5 +487,3 @@ def test_find_real_music_list_name_no_match_returns_input(library, make_music_fi
     library.gen_all_music_list()
 
     assert library.find_real_music_list_name("完全不存在") == "完全不存在"
-
-

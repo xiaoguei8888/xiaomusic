@@ -78,7 +78,6 @@ def is_m4a(url: str) -> bool:
     return url.endswith(".m4a")
 
 
-
 async def get_local_music_duration(filename: str, config) -> float:
     """
     获取本地音乐文件播放时长
@@ -172,7 +171,6 @@ def no_padding(info) -> int:
     """移除 MP3 文件的 padding"""
     # this will remove all padding
     return 0
-
 
 
 def _to_utf8(v):
@@ -558,6 +556,3 @@ def get_real_audio_format(file_path: str) -> str:
         return "mp3"  # 兜底
     except Exception:
         return "mp3"
-
-
-

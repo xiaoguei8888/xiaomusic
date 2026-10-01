@@ -52,7 +52,9 @@ class TaskSupervisor:
         return f"<TaskSupervisor name={self.name!r} active={self.active_names()!r}>"
 
     # -- 登记 ---------------------------------------------------------------
-    def add(self, target: Any, name: str | None = None, *, replace: bool = True) -> asyncio.Task:
+    def add(
+        self, target: Any, name: str | None = None, *, replace: bool = True
+    ) -> asyncio.Task:
         """登记一个协程 / awaitable / 已存在的 Task，返回其 Task。"""
         return self.create_task(target, name, replace=replace)
 
@@ -70,7 +72,9 @@ class TaskSupervisor:
         if existing is not None and existing is not task:
             if not existing.done():
                 if replace:
-                    self._write_log("warning", f"{self.name}: replace running task {key!r}")
+                    self._write_log(
+                        "warning", f"{self.name}: replace running task {key!r}"
+                    )
                     existing.cancel()
                 else:
                     key = self._unique_name(key)
@@ -92,7 +96,9 @@ class TaskSupervisor:
             return asyncio.create_task(target)
         if asyncio.isfuture(target):
             return asyncio.ensure_future(target)
-        raise TypeError(f"TaskSupervisor.add expects coroutine/awaitable/Task, got {type(target)!r}")
+        raise TypeError(
+            f"TaskSupervisor.add expects coroutine/awaitable/Task, got {type(target)!r}"
+        )
 
     def _unique_name(self, key: str) -> str:
         suffix = 2
@@ -112,7 +118,9 @@ class TaskSupervisor:
         if error is not None:
             self._failed += 1
             self._last_error = error
-            self._write_log("error", f"{self.name}: task {key!r} failed: {error!r}", error)
+            self._write_log(
+                "error", f"{self.name}: task {key!r} failed: {error!r}", error
+            )
             return
         self._completed += 1
 
@@ -158,11 +166,15 @@ class TaskSupervisor:
             "cancelled": self._cancelled,
             "failed": self._failed,
             "active_names": self.active_names(),
-            "last_error": repr(self._last_error) if self._last_error is not None else None,
+            "last_error": repr(self._last_error)
+            if self._last_error is not None
+            else None,
         }
 
     # -- 日志 ---------------------------------------------------------------
-    def _write_log(self, level: str, message: str, error: BaseException | None = None) -> None:
+    def _write_log(
+        self, level: str, message: str, error: BaseException | None = None
+    ) -> None:
         log = self._log if self._log is not None else _LOGGER
         writer = getattr(log, level, None)
         if not callable(writer):

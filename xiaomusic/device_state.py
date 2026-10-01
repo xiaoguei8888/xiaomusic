@@ -4,7 +4,12 @@
 保证历史 import 路径 xiaomusic.device_state 不变。
 """
 
-from xiaomusic.core.state import DeviceLike, DeviceStateStore, PlayerSnapshot, StateStore
+from xiaomusic.core.state import (
+    DeviceLike,
+    DeviceStateStore,
+    PlayerSnapshot,
+    StateStore,
+)
 
 __all__ = [
     "DeviceLike",

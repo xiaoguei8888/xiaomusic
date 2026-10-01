@@ -12,7 +12,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from xiaomusic import login_flow  # noqa: E402
-from xiaomusic.auth_state import AuthState, STATUS_NEEDS_VERIFICATION  # noqa: E402
+from xiaomusic.auth_state import STATUS_NEEDS_VERIFICATION, AuthState  # noqa: E402
 
 SID = "xiaomiio"
 OTP_MSG = "OTP verification required but no otp_callback provided."
@@ -262,7 +262,9 @@ def test_resend_after_finished_attempt_reports_pending_again():
             assert first["state"] == "failed", first
             patch.no_otp = False  # 第二轮：正常等码
             second = asyncio.run(_open_then_cancel(flow))
-        assert second["state"] == "pending", f"重新发送没有重新等待验证码，返回 {second!r}"
+        assert second["state"] == "pending", (
+            f"重新发送没有重新等待验证码，返回 {second!r}"
+        )
         print("resend_after_finished_attempt_reports_pending_again OK")
     finally:
         shutil.rmtree(conf_dir)
@@ -298,7 +300,6 @@ def test_successful_verification_reports_ok():
         print("successful_verification_reports_ok OK")
     finally:
         shutil.rmtree(conf_dir)
-
 
 
 if __name__ == "__main__":

@@ -162,9 +162,9 @@ def test_event_instances_are_frozen():
 def test_unknown_and_empty_events_are_safe():
     bus = EventBus()
     assert bus.publish("never_registered") is None
-    assert bus.publish(COMMAND_FAILED, command="play", error_code="command_error") == CommandFailed(
-        command="play", error_code="command_error"
-    )
+    assert bus.publish(
+        COMMAND_FAILED, command="play", error_code="command_error"
+    ) == CommandFailed(command="play", error_code="command_error")
     assert event_name(TrackChanged()) == TRACK_CHANGED
     assert event_name(PLAYER_STATE_CHANGED) == PLAYER_STATE_CHANGED
     print("unknown_and_empty_events_are_safe OK")

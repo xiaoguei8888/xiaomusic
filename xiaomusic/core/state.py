@@ -17,8 +17,8 @@ from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 from xiaomusic.core.events import (
-    PLAYLIST_CHANGED,
     PLAYER_STATE_CHANGED,
+    PLAYLIST_CHANGED,
     TRACK_CHANGED,
     Event,
     EventBus,
@@ -101,7 +101,7 @@ class DeviceStateStore:
             version=self._version,
         )
 
-    def _emit(self, event: "str | Event", **kwargs: Any) -> None:
+    def _emit(self, event: str | Event, **kwargs: Any) -> None:
         if self.event_bus is not None:
             self.event_bus.publish(event, did=self.did, **kwargs)
 

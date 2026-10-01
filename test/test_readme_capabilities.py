@@ -39,7 +39,9 @@ def test_readme_does_not_promise_removed_capabilities():
                 f"README 声明已移除 {name}，但 {rel} 仍存在"
             )
     # README 不应再把 yt-dlp / 二维码登录 当作现有能力描述
-    assert "yt-dlp" not in readme or "没有" in readme, "README 提到 yt-dlp 需明确为已移除"
+    assert "yt-dlp" not in readme or "没有" in readme, (
+        "README 提到 yt-dlp 需明确为已移除"
+    )
     print("readme_does_not_promise_removed_capabilities OK")
 
 

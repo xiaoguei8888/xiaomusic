@@ -19,7 +19,9 @@ def test_every_keyword_maps_to_registered_command():
         {v for v in cfg.key_word_dict.values() if v not in commands.COMMAND_NAMES}
     )
     assert not missing, f"口令表引用了未登记命令: {missing}"
-    print("every_keyword_maps_to_registered_command OK", len(cfg.key_word_dict), "phrases")
+    print(
+        "every_keyword_maps_to_registered_command OK", len(cfg.key_word_dict), "phrases"
+    )
 
 
 def test_every_registered_command_exists_on_xiaomusic():
@@ -27,7 +29,11 @@ def test_every_registered_command_exists_on_xiaomusic():
         n for n in commands.COMMAND_NAMES if not callable(getattr(XiaoMusic, n, None))
     )
     assert not missing, f"注册表引用了 XiaoMusic 上不存在的方法: {missing}"
-    print("every_registered_command_exists_on_xiaomusic OK", len(commands.COMMAND_NAMES), "commands")
+    print(
+        "every_registered_command_exists_on_xiaomusic OK",
+        len(commands.COMMAND_NAMES),
+        "commands",
+    )
 
 
 def test_special_match_cmd_outputs_registered():

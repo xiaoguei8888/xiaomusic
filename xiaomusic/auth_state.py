@@ -9,7 +9,6 @@ import os
 import tempfile
 import time
 
-
 AUTH_STATE_VERSION = 2
 
 SID_MICOAPI = "micoapi"
@@ -130,7 +129,9 @@ class AuthState:
             if self.log:
                 self.log.warning(f"[AUTH-STATE] 写入 auth.json 失败: {e}")
 
-    def set_pass_token(self, pass_token: str, user_id, c_user_id=None, device_id=None) -> None:
+    def set_pass_token(
+        self, pass_token: str, user_id, c_user_id=None, device_id=None
+    ) -> None:
         self.data["passToken"] = pass_token
         self.data["userId"] = user_id
         if c_user_id:

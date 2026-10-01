@@ -13,7 +13,6 @@
 """
 
 import re
-import sys
 from pathlib import Path
 
 STATIC = Path(__file__).resolve().parent.parent / "xiaomusic" / "static" / "default"
@@ -181,7 +180,9 @@ def test_switching_tab_never_sends_network_request():
 def test_pending_state_auto_switches_to_verify_tab():
     """登录返回 state=pending 时必须自动切到验证码 tab。"""
     js = read("setting.js")
-    m = re.search(r'if \(res\.state === "pending"\) \{(.*?)\n        \}', js, flags=re.S)
+    m = re.search(
+        r'if \(res\.state === "pending"\) \{(.*?)\n        \}', js, flags=re.S
+    )
     assert m, "未找到 state=pending 分支"
     body = m.group(1)
     assert "switchLoginTab" in body, "state=pending 时没有自动切到验证码 tab"
@@ -260,7 +261,9 @@ def test_resend_copy_is_short_and_back_button_removed():
     for page in PAGES:
         html = read(page)
         assert "重新发送" in html, f"{page} 缺少重发按钮"
-        assert "重新发送验证码" not in html, f"{page} 重发按钮文案过长，应为「重新发送」"
+        assert "重新发送验证码" not in html, (
+            f"{page} 重发按钮文案过长，应为「重新发送」"
+        )
         assert "verify-back" not in html, f"{page} 仍有已删除的返回按钮"
 
     js = read("setting.js")
@@ -332,7 +335,9 @@ def test_submit_verify_surfaces_backend_rejection():
     m = re.search(r"function submitVerify\(\)\s*\{(.*?)\n    \}", js, flags=re.S)
     assert m, "未找到 submitVerify 函数"
     body = m.group(1)
-    assert "res.success" in body, "submitVerify 没检查 success，后端拒绝会被当成提交成功"
+    assert "res.success" in body, (
+        "submitVerify 没检查 success，后端拒绝会被当成提交成功"
+    )
     assert "finishVerify" in body, "提交被拒后没有结束本轮等待"
 
 
@@ -363,7 +368,6 @@ def test_finish_verify_stops_polling_before_writing_text():
     assert "stopVerifyPolling" in body, "finishVerify 没有停止轮询，提示会被覆盖"
 
 
-
 def test_login_success_stays_on_settings_page():
     """登录成功不能整页刷新把用户踢出设置面板。
 
@@ -389,12 +393,15 @@ def test_verify_success_stays_on_settings_page():
 def test_login_status_states_device_availability_and_sms_need():
     """状态行必须同时说清「设备列表是否可用」和「需不需要短信验证」。"""
     js = strip_comments(read("setting.js"))
-    m = re.search(r"function renderLoginStatus\(res\)\s*\{(.*?)\n    \}", js, flags=re.S)
+    m = re.search(
+        r"function renderLoginStatus\(res\)\s*\{(.*?)\n    \}", js, flags=re.S
+    )
     assert m, "未找到 renderLoginStatus 函数"
     body = m.group(1)
     assert "设备列表可用" in body, "设备可用时没有明确表达"
     assert "无需短信验证" in body, "没说清什么时候不需要短信验证"
     assert "需要短信验证" in body, "没说清什么时候需要短信验证"
+
 
 def test_overdue_qr_copy_removed():
     """删了扫码入口就必须删掉指向它的文案，否则用户会去找不存在的功能。"""

@@ -44,7 +44,9 @@ def test_add_holds_reference_and_name():
         assert sup.is_finish() is True
         assert sup.get("work") is None
         stats = sup.stats()
-        assert (stats["created"], stats["completed"], stats["failed"]) == (1, 1, 0), stats
+        assert (stats["created"], stats["completed"], stats["failed"]) == (1, 1, 0), (
+            stats
+        )
         assert stats["active"] == 0 and stats["active_names"] == []
         print("add_holds_reference_and_name OK", stats)
 
@@ -159,7 +161,11 @@ def test_empty_supervisor_stats_and_finish():
     assert sup.is_finish() is True
     assert sup.active_names() == []
     stats = sup.stats()
-    assert stats["name"] == "empty" and stats["created"] == 0 and stats["last_error"] is None
+    assert (
+        stats["name"] == "empty"
+        and stats["created"] == 0
+        and stats["last_error"] is None
+    )
     print("empty_supervisor_stats_and_finish OK", stats)
 
 

@@ -152,9 +152,7 @@ class Config:
     delay_sec: int = int(os.getenv("XIAOMUSIC_DELAY_SEC", 0))  # 下一首歌延迟播放秒数
     continue_play: bool = os.getenv("XIAOMUSIC_CONTINUE_PLAY", "true").lower() == "true"
     pull_ask_sec: int = int(os.getenv("XIAOMUSIC_PULL_ASK_SEC", "1"))
-    token_refresh_sec: int = int(
-        os.getenv("XIAOMUSIC_TOKEN_REFRESH_SEC", "0")
-    )
+    token_refresh_sec: int = int(os.getenv("XIAOMUSIC_TOKEN_REFRESH_SEC", "0"))
     enable_pull_ask: bool = (
         os.getenv("XIAOMUSIC_ENABLE_PULL_ASK", "true").lower() == "true"
     )

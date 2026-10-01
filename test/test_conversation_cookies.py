@@ -5,7 +5,6 @@
 
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -51,7 +50,9 @@ def test_cookies_include_full_template_fields():
     """回归：只传 deviceId 会被小米接口拒绝（400 MissingRequestCookieException）。"""
     p = _poller({"userId": 1084787080, "sids": {"micoapi": {"serviceToken": "TK"}}})
     got = p._build_ask_cookies("DEV1")
-    assert got == {"deviceId": "DEV1", "userId": "1084787080", "serviceToken": "TK"}, got
+    assert got == {"deviceId": "DEV1", "userId": "1084787080", "serviceToken": "TK"}, (
+        got
+    )
     print("cookies_include_full_template_fields OK", sorted(got))
 
 

@@ -37,9 +37,7 @@ async def login_status(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
 
 
 @router.post("/api/login/start")
-async def login_start(
-    payload: dict, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+async def login_start(payload: dict, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """用账号密码启动登录；password 为空则用已保存的凭据。"""
     auth = xiaomusic.auth_manager
     account = payload.get("account") or auth.config.account

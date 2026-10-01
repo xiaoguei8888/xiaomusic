@@ -29,7 +29,6 @@ from xiaomusic.utils.system_utils import try_add_access_control_param
 from xiaomusic.utils.text_utils import custom_sort_key, find_best_match, fuzzyfinder
 
 
-
 class MusicLibrary:
     """音乐库管理类
 
@@ -70,7 +69,6 @@ class MusicLibrary:
         self.all_music_tags = {}  # 音乐标签缓存
         self._tag_generation_task = False  # 标签生成任务标志
 
-
     def gen_all_music_list(self):
         """生成所有音乐列表
 
@@ -96,7 +94,6 @@ class MusicLibrary:
             if dir_name == os.path.basename(self.config.music_path):
                 dir_name = "其他"
 
-
             if dir_name not in all_music_by_dir:
                 all_music_by_dir[dir_name] = {}
 
@@ -118,7 +115,6 @@ class MusicLibrary:
             }
         )
 
-
         # 最近新增
         self.music_list["最近新增"] = sorted(
             self.all_music.keys(),
@@ -130,7 +126,6 @@ class MusicLibrary:
         self.music_list["全部"] = list(self.all_music.keys())
         self.music_list["所有歌曲"] = list(self.all_music.keys())
 
-
         # 文件夹歌单
         for dir_name, musics in all_music_by_dir.items():
             self.music_list[dir_name] = list(musics.keys())
@@ -138,7 +133,6 @@ class MusicLibrary:
         # 歌单排序
         for play_list in self.music_list.values():
             play_list.sort(key=custom_sort_key)
-
 
         # 非自定义歌单
         self.default_music_list_names = list(self.music_list.keys())
@@ -151,10 +145,8 @@ class MusicLibrary:
         for name, filepath in self.all_music.items():
             self._extra_index_search[filepath] = name
 
-
         # all_music 更新，重建 tag（仅在事件循环启动后才会执行）
         self.try_gen_all_music_tag()
-
 
     def refresh_custom_play_list(self):
         """刷新自定义歌单"""
@@ -359,7 +351,6 @@ class MusicLibrary:
         self.save_custom_play_list()
         return True
 
-
     def _resolve_play_list(self, name, create_if_missing=False):
         """获取歌单列表引用，同时返回是否需要持久化自定义歌单
 
@@ -556,8 +547,6 @@ class MusicLibrary:
             return False
         return bool(self.get_filename(name))
 
-
-
     # ==================== 标签管理 ====================
 
     async def get_music_tags(self, name):
@@ -621,7 +610,6 @@ class MusicLibrary:
         self.try_save_tag_cache()
         return "OK"
 
-
     async def get_music_duration(self, name: str, playlist_name: str = None) -> float:
         """获取歌曲时长
 
@@ -665,7 +653,6 @@ class MusicLibrary:
             self.log.exception(f"获取本地音乐 {name} 时长失败: {e}")
 
         return duration
-
 
     def refresh_music_tag(self):
         """刷新音乐标签（给前端调用）"""
@@ -818,7 +805,6 @@ class MusicLibrary:
         """
         return self.all_music
 
-
     # ==================== URL处理方法 ====================
 
     # 接收 playlist_name
@@ -834,7 +820,6 @@ class MusicLibrary:
         """
         self.log.info(f"get_music_url name:{name}")
         return self._get_local_music_url(name)
-
 
     def _get_local_music_url(self, name):
         """获取本地音乐播放地址
@@ -877,5 +862,3 @@ class MusicLibrary:
         encoded_name = urllib.parse.quote(filename)
         url = f"{self.config.hostname}:{self.config.public_port}/music/{encoded_name}"
         return try_add_access_control_param(self.config, url)
-
-

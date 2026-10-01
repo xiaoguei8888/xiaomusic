@@ -346,6 +346,7 @@ async def test_get_cloud_status_returns_none_without_service(config, fake_log):
 
     assert await dev.get_cloud_status() is None
 
+
 # --------------------------------------------------------------------------
 # 属性 / 播放进度 / 定时器 / 歌单匹配
 # --------------------------------------------------------------------------
@@ -545,6 +546,7 @@ async def test_cloud_polling_backs_off_on_failure(config, fake_log):
     await asyncio.sleep(0)
     assert dev._poll_task is None
 
+
 # --------------------------------------------------------------------------
 # get_music 修复后的正式回归（lead 已修，xfail 已转为断言）
 # --------------------------------------------------------------------------
@@ -704,7 +706,9 @@ async def test_resume_without_pause_session_plays_current_music(config, fake_log
 async def test_resume_with_other_song_plays_that_song(config, fake_log):
     """暂停后用户换了一首歌：应点播那首歌，而不是续播旧断点。"""
     mina = FakeMina({"status": 2, "volume": 5, "track_list": []})
-    dev = make_device(config, fake_log, songs=["a", "b"], cur_music="a", mina_service=mina)
+    dev = make_device(
+        config, fake_log, songs=["a", "b"], cur_music="a", mina_service=mina
+    )
     dev.is_playing = True
     dev._duration = 120
     dev._start_time = time.time()
@@ -733,7 +737,12 @@ async def test_pause_requires_cloud_service(config, fake_log):
 def test_paused_offset_keeps_breakpoint_instead_of_zero(config, fake_log):
     """暂停时进度条要停在断点，不能跳回 0（否则看起来像被重播）。"""
     dev = make_device(config, fake_log, songs=["a"])
-    dev._cloud_snapshot = {"_ok": True, "status": 2, "position": 42.0, "duration": 180.0}
+    dev._cloud_snapshot = {
+        "_ok": True,
+        "status": 2,
+        "position": 42.0,
+        "duration": 180.0,
+    }
     dev._cloud_snapshot_at = time.time()
 
     assert dev.get_offset_duration() == (42.0, 180.0)
@@ -783,5 +792,3 @@ def test_display_state_waits_for_cloud_after_pause(config, fake_log):
     dev._local_pause_at = time.time() - dev.INTENT_CONFIRM_SEC - 1
 
     assert dev.get_display_state()[0] is True
-
-

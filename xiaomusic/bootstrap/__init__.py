@@ -28,13 +28,13 @@ class Container:
     """
 
     def __init__(self) -> None:
-        self._factories: dict[str, Callable[["Container"], Any]] = {}
+        self._factories: dict[str, Callable[[Container], Any]] = {}
         self._instances: dict[str, Any] = {}
         self._resolving: list[str] = []
 
     # ---------- 注册 ----------
 
-    def register(self, name: str, factory: Callable[["Container"], Any]) -> None:
+    def register(self, name: str, factory: Callable[[Container], Any]) -> None:
         """注册一个惰性单例工厂。"""
         if name in self._factories or name in self._instances:
             raise ContainerError(f"服务已注册: {name}")
@@ -57,7 +57,9 @@ class Container:
             return self._instances[name]
         factory = self._factories.get(name)
         if factory is None:
-            raise ContainerError(f"服务未注册: {name}（已注册: {sorted(self.names())}）")
+            raise ContainerError(
+                f"服务未注册: {name}（已注册: {sorted(self.names())}）"
+            )
         if name in self._resolving:
             cycle = " -> ".join([*self._resolving, name])
             raise ContainerError(f"检测到循环依赖: {cycle}")
@@ -111,7 +113,7 @@ class Application:
         self.container = container or Container()
         self._modules: list[Module] = []
 
-    def add(self, module: Module) -> "Application":
+    def add(self, module: Module) -> Application:
         self._modules.append(module)
         module.register(self.container)
         return self

@@ -20,9 +20,12 @@ from xiaomusic.events import (  # noqa: E402
 def _recorder():
     bus = EventBus()
     events = []
-    bus.subscribe(TRACK_CHANGED, lambda **kw: events.append(("track", kw.get("cur_music"))))
     bus.subscribe(
-        PLAYER_STATE_CHANGED, lambda **kw: events.append(("state", kw.get("is_playing")))
+        TRACK_CHANGED, lambda **kw: events.append(("track", kw.get("cur_music")))
+    )
+    bus.subscribe(
+        PLAYER_STATE_CHANGED,
+        lambda **kw: events.append(("state", kw.get("is_playing"))),
     )
     return bus, events
 

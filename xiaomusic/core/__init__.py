@@ -31,7 +31,12 @@ from xiaomusic.core.events import (
     TrackChanged,
     event_name,
 )
-from xiaomusic.core.state import DeviceLike, DeviceStateStore, PlayerSnapshot, StateStore
+from xiaomusic.core.state import (
+    DeviceLike,
+    DeviceStateStore,
+    PlayerSnapshot,
+    StateStore,
+)
 from xiaomusic.core.task_supervisor import TaskSupervisor
 
 __all__ = [

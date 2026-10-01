@@ -38,9 +38,7 @@ def searchmusic(name: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic))
 
 
 @router.get("/playingmusic")
-def playingmusic(
-    did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+def playingmusic(did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """当前播放音乐"""
     if not xiaomusic.did_exist(did):
         return {"ret": "Did not exist"}

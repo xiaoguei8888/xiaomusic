@@ -48,7 +48,9 @@ class _Lib:
 
 def _device(play_type, cur_music, songs, cur_playlist="全部"):
     dev = XiaoMusicDevice.__new__(XiaoMusicDevice)
-    dev.device = Device(cur_playlist=cur_playlist, cur_music=cur_music, play_type=play_type)
+    dev.device = Device(
+        cur_playlist=cur_playlist, cur_music=cur_music, play_type=play_type
+    )
     dev._play_list = []
     dev.log = _Log()
     dev.xiaomusic = types.SimpleNamespace(

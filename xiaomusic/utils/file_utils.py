@@ -189,6 +189,3 @@ def chmoddir(dir_path: str) -> None:
                 log.info(f"Changed permissions of file: {item_path}")
             except Exception as e:
                 log.info(f"chmoddir failed: {e}")
-
-
-

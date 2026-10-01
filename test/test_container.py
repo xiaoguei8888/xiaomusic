@@ -9,7 +9,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from xiaomusic.bootstrap import Application, Container, ContainerError, Module  # noqa: E402
+from xiaomusic.bootstrap import (  # noqa: E402
+    Application,
+    Container,
+    ContainerError,
+    Module,
+)
 
 
 def test_register_and_resolve_singleton():

@@ -15,13 +15,10 @@ import time
 from aiohttp import ClientSession
 from miservice import MiAccount, MiIOService, MiNAService
 
+from xiaomusic.auth_state import STATUS_OK, AuthState, AuthTokenStore
 from xiaomusic.config import Device
-from xiaomusic.const import COOKIE_TEMPLATE
-from xiaomusic.auth_state import AuthState, AuthTokenStore, STATUS_OK
 from xiaomusic.utils.system_utils import (
     get_random,
-    parse_cookie_string,
-    parse_cookie_string_to_dict,
 )
 
 LOGIN_COOLDOWN_SEC = 30
@@ -53,7 +50,9 @@ class AuthManager:
             os.path.join(self.config.conf_path, "auth.json"), self.log
         )
         self._state.load()
-        self.device_id = self._state.data.get("deviceId") or self._load_or_create_device_id()
+        self.device_id = (
+            self._state.data.get("deviceId") or self._load_or_create_device_id()
+        )
         self._state.data["deviceId"] = self.device_id
         if self.config.account and not self._state.data.get("account"):
             self._state.data["account"] = self.config.account
@@ -348,4 +347,3 @@ class AuthManager:
         except Exception as e:
             self.log.warning(f"[AUTH] try_update_device_id 失败: {e}")
             return {}
-

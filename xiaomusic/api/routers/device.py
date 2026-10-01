@@ -37,9 +37,7 @@ async def device_list(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
 
 
 @router.get("/getvolume")
-async def getvolume(
-    did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+async def getvolume(did: str = "", xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """获取音量"""
     if not xiaomusic.did_exist(did):
         return {"volume": 0}
@@ -68,9 +66,7 @@ async def getplayerstatus(
 
 
 @router.post("/setvolume")
-async def setvolume(
-    data: DidVolume, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+async def setvolume(data: DidVolume, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """设置音量"""
     did = data.did
     volume = data.volume
@@ -112,9 +108,7 @@ async def cmd_status(xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
 
 
 @router.get("/playurl")
-async def playurl(
-    did: str, url: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+async def playurl(did: str, url: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """播放 URL"""
     if not xiaomusic.did_exist(did):
         return {"ret": "Did not exist"}
@@ -124,9 +118,7 @@ async def playurl(
 
 
 @router.get("/playtts")
-async def playtts(
-    did: str, text: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
-):
+async def playtts(did: str, text: str, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     """播放 TTS"""
     if not xiaomusic.did_exist(did):
         return {"ret": "Did not exist"}

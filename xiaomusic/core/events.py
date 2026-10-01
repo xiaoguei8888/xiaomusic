@@ -124,7 +124,7 @@ Subscriber = Callable[..., None]
 SubscriptionKey = "str | type[Event]"
 
 
-def event_name(event: "str | Event") -> str:
+def event_name(event: str | Event) -> str:
     """取事件名：字符串原样返回，事件实例取其 event_type。"""
     if isinstance(event, Event):
         return event.event_type
@@ -144,23 +144,25 @@ class EventBus:
         self._log = log
 
     def __repr__(self) -> str:
-        keys = [key if isinstance(key, str) else key.__name__ for key in self._subscribers]
+        keys = [
+            key if isinstance(key, str) else key.__name__ for key in self._subscribers
+        ]
         return f"<EventBus events={sorted(keys)}>"
 
     # -- 订阅 ---------------------------------------------------------------
-    def subscribe(self, event: "str | type[Event]", callback: Subscriber) -> None:
+    def subscribe(self, event: str | type[Event], callback: Subscriber) -> None:
         """订阅事件；重复订阅同一回调只生效一次。"""
         bucket = self._subscribers.setdefault(event, [])
         if callback not in bucket:
             bucket.append(callback)
 
-    def unsubscribe(self, event: "str | type[Event]", callback: Subscriber) -> None:
+    def unsubscribe(self, event: str | type[Event], callback: Subscriber) -> None:
         """取消订阅；未订阅时静默返回。"""
         bucket = self._subscribers.get(event)
         if bucket and callback in bucket:
             bucket.remove(callback)
 
-    def subscriber_count(self, event: "str | type[Event]") -> int:
+    def subscriber_count(self, event: str | type[Event]) -> int:
         """返回某事件键上的订阅者数量（测试/诊断用）。"""
         return len(self._subscribers.get(event, ()))
 
@@ -169,7 +171,7 @@ class EventBus:
         self._subscribers.clear()
 
     # -- 发布 ---------------------------------------------------------------
-    def publish(self, event: "str | Event", **kwargs: Any) -> Event | None:
+    def publish(self, event: str | Event, **kwargs: Any) -> Event | None:
         """同步发布事件。
 
         返回归一化后的 Event 实例；字符串事件名若无对应类型则返回 None。
@@ -182,7 +184,7 @@ class EventBus:
 
     @staticmethod
     def _normalize(
-        event: "str | Event", kwargs: dict[str, Any]
+        event: str | Event, kwargs: dict[str, Any]
     ) -> tuple[str, dict[str, Any], Event | None]:
         """把两种发布形式归一化为 (事件名, 字符串订阅者 kwargs, 类型事件或 None)。
 
@@ -195,7 +197,9 @@ class EventBus:
         if cls is None:
             return name, dict(kwargs), None
         allowed = {field.name for field in fields(cls)}
-        event_obj = cls(**{key: value for key, value in kwargs.items() if key in allowed})
+        event_obj = cls(
+            **{key: value for key, value in kwargs.items() if key in allowed}
+        )
         return name, dict(kwargs), event_obj
 
     def _dispatch_string(self, name: str, payload: dict[str, Any]) -> None:
@@ -215,9 +219,13 @@ class EventBus:
                 except Exception as exc:  # noqa: BLE001 - 订阅者异常必须隔离
                     self._report_error(cls.__name__, callback, exc)
 
-    def _report_error(self, source: str, callback: Subscriber, exc: BaseException) -> None:
+    def _report_error(
+        self, source: str, callback: Subscriber, exc: BaseException
+    ) -> None:
         name = getattr(callback, "__name__", None) or repr(callback)
-        message = f"{self!r} subscriber {name} on {source} raised {type(exc).__name__}: {exc}"
+        message = (
+            f"{self!r} subscriber {name} on {source} raised {type(exc).__name__}: {exc}"
+        )
         log = self._log
         if log is not None:
             for level in ("exception", "error", "warning"):

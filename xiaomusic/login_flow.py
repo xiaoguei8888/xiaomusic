@@ -16,15 +16,14 @@ import asyncio
 from miservice import MiAccount
 
 from .auth_state import (
-    AuthState,
-    AuthTokenStore,
     SID_MICOAPI,
     SID_XIAOMIIO,
-    STATUS_OK,
-    STATUS_NEEDS_VERIFICATION,
     STATUS_ERROR,
+    STATUS_NEEDS_VERIFICATION,
+    STATUS_OK,
+    AuthState,
+    AuthTokenStore,
 )
-
 
 LOGIN_TIMEOUT_SEC = 60
 VERIFY_WAIT_SEC = 300
@@ -52,6 +51,7 @@ def _verify_failure_text(err: str) -> str:
 
 class _OTPBridge:
     """miservice 的 otp_callback 实现：等待前端提交短信码。"""
+
     def __init__(self, log):
         self.log = log
         self._future: asyncio.Future | None = None
@@ -203,25 +203,35 @@ class LoginFlow:
                     err = _err_text(acct)
                     self.state.set_sid_error(sid, err)
                     self.log.warning(f"[LOGIN] {sid} 验证失败: {err[:200]}")
-                    self._set_verify_outcome(gen, sid, "failed", _verify_failure_text(err))
+                    self._set_verify_outcome(
+                        gen, sid, "failed", _verify_failure_text(err)
+                    )
             except asyncio.CancelledError:
                 raise  # 已被新一轮取代：不写任何状态，交给新一轮
             except Exception as e:
                 msg = str(e)
                 if self._looks_like_rate_limit(msg):
                     self.state.set_cooldown(RATE_LIMIT_COOLDOWN_SEC)
-                    self._set_verify_outcome(gen, sid, "failed", "请求过于频繁，请稍后再试")
+                    self._set_verify_outcome(
+                        gen, sid, "failed", "请求过于频繁，请稍后再试"
+                    )
                 else:
                     self.state.set_sid_error(sid, msg[:200])
                     self.log.warning(f"[LOGIN] {sid} 验证异常: {msg[:200]}")
-                    self._set_verify_outcome(gen, sid, "failed", _verify_failure_text(msg))
+                    self._set_verify_outcome(
+                        gen, sid, "failed", _verify_failure_text(msg)
+                    )
             finally:
                 if gen == self._verify_gen:
                     self._verify_done.set()
 
         self._verify_task = asyncio.create_task(_run())
         for _ in range(80):
-            if self.otp.method or self._verify_done.is_set() or self.state.cooldown_active():
+            if (
+                self.otp.method
+                or self._verify_done.is_set()
+                or self.state.cooldown_active()
+            ):
                 break
             await asyncio.sleep(0.1)
         if self.state.cooldown_active():
@@ -233,7 +243,8 @@ class LoginFlow:
             return {
                 "state": "failed",
                 "sid": sid,
-                "message": self._verify_state.get("message") or "验证发起失败，请稍后重试",
+                "message": self._verify_state.get("message")
+                or "验证发起失败，请稍后重试",
             }
         return {"state": "pending", "sid": sid, "method": self.otp.method or "Phone"}
 
@@ -242,17 +253,15 @@ class LoginFlow:
 
     def status(self) -> dict:
         self.state.load()
-        sids = {
-            sid: self.state.sid_status(sid)
-            for sid in (SID_MICOAPI, SID_XIAOMIIO)
-        }
+        sids = {sid: self.state.sid_status(sid) for sid in (SID_MICOAPI, SID_XIAOMIIO)}
         if sids.get(SID_MICOAPI) == STATUS_OK:
             overall = "authenticated"
             if sids.get(SID_XIAOMIIO) != STATUS_OK:
                 overall = "degraded"
-        elif sids.get(SID_XIAOMIIO) == STATUS_NEEDS_VERIFICATION or sids.get(
-            SID_MICOAPI
-        ) == STATUS_NEEDS_VERIFICATION:
+        elif (
+            sids.get(SID_XIAOMIIO) == STATUS_NEEDS_VERIFICATION
+            or sids.get(SID_MICOAPI) == STATUS_NEEDS_VERIFICATION
+        ):
             overall = "needs_verification"
         elif self.state.cooldown_active():
             overall = "cooldown"
