@@ -125,7 +125,7 @@ async def login_verify_open(
     elif state == "cooldown":
         message = "请求过于频繁，请稍后再试"
     else:
-        message = "验证发起失败，请稍后重试"
+        message = started.get("message") or "验证发起失败，请稍后重试"
     started["success"] = state in ("pending", "ok")
     started["message"] = message
     return started

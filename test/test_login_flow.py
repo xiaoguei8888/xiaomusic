@@ -170,6 +170,137 @@ def test_open_verification_keeps_otp_callback():
         shutil.rmtree(conf_dir)
 
 
+# ---------------------------------------------------------------------------
+# 验证失败 / 重发路径的回归（用户可见缺陷：提交后一直「等待验证结果」）
+# ---------------------------------------------------------------------------
+class _OtpMiAccount:
+    """login() 真的走到 otp_callback：先等码，再按 otp_ok 决定成败。
+
+    对应真实链路：miservice 发短信 → 挂起等前端 submit_code → 校验验证码。
+    """
+
+    instances = []
+    codes = []
+    no_otp = False  # True 时模拟自动路径：不传回调，直接失败
+    otp_ok = True
+
+    def __init__(
+        self, session, username, password, token_store=None, otp_callback=_UNSET
+    ):
+        self.otp_callback = otp_callback
+        self.token = {"deviceId": "TESTDEV"}
+        self._login_error = ""
+        _OtpMiAccount.instances.append(self)
+
+    async def login(self, sid):
+        if _OtpMiAccount.no_otp:
+            self._login_error = OTP_MSG
+            return False
+        code = await self.otp_callback("Phone")
+        _OtpMiAccount.codes.append(code)
+        if not code:
+            self._login_error = "No OTP code provided"
+            return False
+        if not _OtpMiAccount.otp_ok:
+            self._login_error = "OTP verification failed, no location in response: {}"
+            return False
+        self.token[sid] = ("ssec", "stoken")
+        return True
+
+
+class _PatchOtpMiAccount:
+    def __enter__(self):
+        self._orig = login_flow.MiAccount
+        _OtpMiAccount.instances = []
+        _OtpMiAccount.codes = []
+        _OtpMiAccount.no_otp = False
+        _OtpMiAccount.otp_ok = True
+        login_flow.MiAccount = _OtpMiAccount
+        return _OtpMiAccount
+
+    def __exit__(self, *exc):
+        login_flow.MiAccount = self._orig
+        return False
+
+
+async def _open_then_cancel(flow, sid=SID):
+    """跑一次 open_verification；结束时收掉仍在等码的任务，避免悬挂。"""
+    res = await flow.open_verification(sid)
+    task = getattr(flow, "_verify_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except BaseException:  # noqa: BLE001 - 取消即可
+            pass
+    return res
+
+
+async def _submit_and_wait(flow, code="000000", sid=SID):
+    res = await flow.open_verification(sid)
+    assert res["state"] == "pending", res
+    assert flow.submit_code(sid, code) is True, "提交的验证码必须被 OTP 桥接接受"
+    for _ in range(200):
+        if flow.status()["verify"]["state"] != "pending":
+            break
+        await asyncio.sleep(0.01)
+    return flow.status()
+
+
+def test_resend_after_finished_attempt_reports_pending_again():
+    """第一轮验证结束后，「重新发送」必须真的能再发一次。
+
+    缺陷：_verify_done 在 __init__ 里创建、只 set 不 clear，第二次
+    open_verification 的探测循环第 0 圈就判定「已结束」，直接返回 failed，
+    于是用户点「重新发送」永远只得到「验证发起失败」，没有任何重试入口。
+    """
+    flow, _state, conf_dir = _make_flow()
+    try:
+        with _PatchOtpMiAccount() as patch:
+            patch.no_otp = True  # 第一轮：失败收场
+            first = asyncio.run(flow.open_verification(SID))
+            assert first["state"] == "failed", first
+            patch.no_otp = False  # 第二轮：正常等码
+            second = asyncio.run(_open_then_cancel(flow))
+        assert second["state"] == "pending", f"重新发送没有重新等待验证码，返回 {second!r}"
+        print("resend_after_finished_attempt_reports_pending_again OK")
+    finally:
+        shutil.rmtree(conf_dir)
+
+
+def test_failed_verification_is_exposed_to_frontend():
+    """验证码被拒时必须把终局失败暴露给前端。
+
+    缺陷：_run() 只在 auth.json 里写 error，status() 不返回任何东西；
+    前端只能靠 sids[sid]==ok 判断成功，于是失败=永远「等待验证结果」。
+    """
+    flow, _state, conf_dir = _make_flow()
+    try:
+        with _PatchOtpMiAccount() as patch:
+            patch.otp_ok = False
+            status = asyncio.run(_submit_and_wait(flow))
+        assert status["verify"]["sid"] == SID, status["verify"]
+        assert status["verify"]["state"] == "failed", status["verify"]
+        assert status["verify"]["message"], "失败必须带人话文案，前端直接展示"
+        print("failed_verification_is_exposed_to_frontend OK")
+    finally:
+        shutil.rmtree(conf_dir)
+
+
+def test_successful_verification_reports_ok():
+    """成功路径不能被上面的改动破坏：sid 变 ok，verify 也报 ok。"""
+    flow, _state, conf_dir = _make_flow()
+    try:
+        with _PatchOtpMiAccount():
+            status = asyncio.run(_submit_and_wait(flow, code="123456"))
+        assert status["sids"][SID] == "ok", status["sids"]
+        assert status["verify"]["state"] == "ok", status["verify"]
+        print("successful_verification_reports_ok OK")
+    finally:
+        shutil.rmtree(conf_dir)
+
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

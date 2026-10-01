@@ -372,12 +372,16 @@ function initSettingPanel() {
     let verifyTimer = null;
     let verifyCountdownTimer = null;
     let verifySid = "micoapi";
+    // 提交验证码后最多等多久（ms）。后端不会永远停在 pending（要么 ok，
+    // 要么 verify.state=failed），这里是「后端卡住时前端陪着无限等」的兜底。
+    const VERIFY_RESULT_TIMEOUT_MS = 60000;
+    let verifyDeadline = 0;
 
     // 兜底：把不存在的 DOM 当成空集合处理，避免一个缺失元素让整段脚本中断。
     // 历史上这里引用过 /api/login/qrcode（后端已删除，返回 404），属于死代码。
     function showLoginError(msg) {
       switchLoginTab("verify");
-      $("#verify-status").text("⚠️ " + msg);
+      finishVerify("⚠️ " + msg);
     }
 
     function stopVerifyPolling() {
@@ -385,6 +389,15 @@ function initSettingPanel() {
         clearInterval(verifyTimer);
         verifyTimer = null;
       }
+    }
+
+    /* 本轮验证结束：先停轮询，再写最终文案。
+     * 顺序不能反 —— pollLoginState 每 2s 会把 #verify-status 无条件改回
+     * 「等待验证结果...」，任何失败/成功提示都会被它覆盖掉。 */
+    function finishVerify(msg) {
+      stopVerifyPolling();
+      stopVerifyCountdown();
+      if (msg) { $("#verify-status").text(msg); }
     }
 
     /* ---------- 登录方式切换（账号密码 / 短信验证码） ----------
@@ -460,19 +473,27 @@ function initSettingPanel() {
       return !!(res && res.sids && res.sids[sid] === "ok");
     }
 
+    // 后端是否已判定本轮验证失败（验证码错误/过期/被拒）？
+    // 必须连 sid 一起比：verify 是「最后一次尝试」的全局结果，可能属于另一个 sid。
+    function verifyFailed(res) {
+      return !!(res && res.verify && res.verify.state === "failed" &&
+        res.verify.sid === verifySid);
+    }
+
     function pollLoginState() {
       $.get("/api/login/status", function (res) {
         if (!res) return;
         if (sidDone(res, verifySid)) {
-          stopVerifyPolling();
-          stopVerifyCountdown();
           clearVerifyBadge();
-          $("#verify-status").text("验证成功，正在刷新页面...");
+          finishVerify("验证成功，正在刷新页面...");
           setTimeout(function () { location.reload(); }, 800);
         } else if (res.state === "cooldown") {
-          stopVerifyPolling();
-          stopVerifyCountdown();
-          $("#verify-status").text("请求过于频繁，请稍后再试");
+          finishVerify("请求过于频繁，请稍后再试");
+        } else if (verifyFailed(res)) {
+          // 后端已有终局结论，继续轮询只会一直显示「等待验证结果...」。
+          finishVerify("⚠️ " + (res.verify.message || "验证失败，请重新发送验证码"));
+        } else if (verifyDeadline && Date.now() > verifyDeadline) {
+          finishVerify("⚠️ 等待验证结果超时，请重新发送验证码");
         } else {
           $("#verify-status").text("等待验证结果...");
         }
@@ -481,6 +502,7 @@ function initSettingPanel() {
 
     function beginVerify(sid, method, waitSeconds) {
       verifySid = sid || "xiaomiio";
+      verifyDeadline = 0; // 新一轮：清掉上一轮的超时判定
       showVerifyBox(method, waitSeconds);
       // 需要二次验证时自动切到验证码 tab，用户不用自己找入口。
       switchLoginTab("verify");
@@ -569,12 +591,19 @@ function initSettingPanel() {
         method: "POST",
         contentType: "application/json",
         data: JSON.stringify({ sid: verifySid, code: code }),
-      }).done(function () {
+      }).done(function (res) {
         $btn.prop("disabled", false);
+        // 后端拒绝时返回的也是 HTTP 200（success:false）。不读响应体就会把
+        // 「当前没有等待中的验证」当成提交成功，然后一直傻等（实测 3h54m）。
+        if (!res || !res.success) {
+          finishVerify("⚠️ " + ((res && res.message) || "提交失败，请重新发送验证码"));
+          return;
+        }
+        verifyDeadline = Date.now() + VERIFY_RESULT_TIMEOUT_MS;
         $("#verify-status").text("已提交，等待结果...");
       }).fail(function (xhr) {
         $btn.prop("disabled", false);
-        $("#verify-status").text("提交失败: " + xhr.statusText);
+        finishVerify("提交失败: " + xhr.statusText);
       });
     }
 

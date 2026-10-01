@@ -35,6 +35,21 @@ def _err_text(acct) -> str:
     return str(getattr(acct, "_login_error", "") or "login returned False")[:200]
 
 
+def _verify_failure_text(err: str) -> str:
+    """把 miservice 的异常原文收敛成用户能照着做的一句话。
+
+    原始错误形如 "OTP verification failed, no location in response: {…}"，
+    直接展示给用户没有任何可操作性。
+    """
+    if "No OTP code provided" in err:
+        return "验证码等待超时，请重新发送验证码"
+    if "OTP verification failed" in err:
+        return "验证码错误或已过期，请重新发送验证码"
+    if "OTP" in err:
+        return "验证码发送失败，请稍后重试"
+    return "验证失败，请重试"
+
+
 class _OTPBridge:
     """miservice 的 otp_callback 实现：等待前端提交短信码。"""
     def __init__(self, log):
@@ -75,6 +90,14 @@ class LoginFlow:
         self._lock = asyncio.Lock()
         self._verify_sid: str | None = None
         self._verify_done = asyncio.Event()
+        # 每轮验证带一个代号：被新轮次取代的旧任务不允许再写任何结果，
+        # 否则它超时后会把自己的失败覆盖到新一轮已经成功的结果上。
+        self._verify_gen = 0
+        self._verify_task: asyncio.Task | None = None
+        # 暴露给前端的终局状态：idle / pending / ok / failed。
+        # 前端只能靠 sids[sid]=="ok" 判断成功，失败与否必须显式告知，
+        # 否则「提交后一直等待」没有任何出口。
+        self._verify_state: dict = {"sid": "", "state": "idle", "message": ""}
 
     def _new_account(self, allow_otp: bool = False) -> MiAccount:
         store = AuthTokenStore(self.state, self.log)
@@ -145,11 +168,29 @@ class LoginFlow:
     def _looks_like_needs_verification(self, msg: str) -> bool:
         return "OTP verification required" in msg
 
+    def _set_verify_outcome(self, gen: int, sid: str, state: str, message: str) -> None:
+        """记录本轮验证的终局；只有最新一轮有资格写。"""
+        if gen != self._verify_gen:
+            return
+        self._verify_state = {"sid": sid, "state": state, "message": message}
+
     async def open_verification(self, sid: str) -> dict:
         if self.state.cooldown_active():
             return {"state": "cooldown", "sid": sid}
+        # 上一轮可能还在等码（最长 VERIFY_WAIT_SEC）：必须先收掉。
+        # 否则它会一直等到超时，然后把「验证失败」写进本轮已经成功的结果。
+        if self._verify_task is not None and not self._verify_task.done():
+            self._verify_task.cancel()
+            self._verify_task = None
         self._verify_sid = sid
         self.otp.reset()
+        # 每一轮都是全新的事件：Event 只 set 不 clear 的话，第二次
+        # open_verification 第 0 圈就误判「已结束」直接返回 failed，
+        # 「重新发送」将永远失败，用户没有任何重试入口。
+        self._verify_done.clear()
+        self._verify_gen += 1
+        gen = self._verify_gen
+        self._verify_state = {"sid": sid, "state": "pending", "message": ""}
 
         async def _run():
             acct = self._new_account(allow_otp=True)
@@ -157,18 +198,28 @@ class LoginFlow:
                 ok = await acct.login(sid)
                 if ok:
                     self.state.sync_from_miservice_token(acct.token or {})
+                    self._set_verify_outcome(gen, sid, "ok", "")
                 else:
-                    self.state.set_sid_error(sid, _err_text(acct))
+                    err = _err_text(acct)
+                    self.state.set_sid_error(sid, err)
+                    self.log.warning(f"[LOGIN] {sid} 验证失败: {err[:200]}")
+                    self._set_verify_outcome(gen, sid, "failed", _verify_failure_text(err))
+            except asyncio.CancelledError:
+                raise  # 已被新一轮取代：不写任何状态，交给新一轮
             except Exception as e:
                 msg = str(e)
                 if self._looks_like_rate_limit(msg):
                     self.state.set_cooldown(RATE_LIMIT_COOLDOWN_SEC)
+                    self._set_verify_outcome(gen, sid, "failed", "请求过于频繁，请稍后再试")
                 else:
                     self.state.set_sid_error(sid, msg[:200])
+                    self.log.warning(f"[LOGIN] {sid} 验证异常: {msg[:200]}")
+                    self._set_verify_outcome(gen, sid, "failed", _verify_failure_text(msg))
             finally:
-                self._verify_done.set()
+                if gen == self._verify_gen:
+                    self._verify_done.set()
 
-        asyncio.create_task(_run())
+        self._verify_task = asyncio.create_task(_run())
         for _ in range(80):
             if self.otp.method or self._verify_done.is_set() or self.state.cooldown_active():
                 break
@@ -179,7 +230,11 @@ class LoginFlow:
             status = self.state.sid_status(sid)
             if status == STATUS_OK:
                 return {"state": "ok", "sid": sid}
-            return {"state": "failed", "sid": sid}
+            return {
+                "state": "failed",
+                "sid": sid,
+                "message": self._verify_state.get("message") or "验证发起失败，请稍后重试",
+            }
         return {"state": "pending", "sid": sid, "method": self.otp.method or "Phone"}
 
     def submit_code(self, sid: str, code: str) -> bool:
@@ -208,4 +263,7 @@ class LoginFlow:
             "account": self.state.data.get("account", ""),
             "sids": sids,
             "cooldownUntil": self.state.data.get("cooldownUntil", 0),
+            # 本轮验证的终局。sids[sid] 会被自动登录路径（60s 周期）重新写成
+            # needs_verification，靠它判断「刚刚那次提交是不是失败了」并不可靠。
+            "verify": dict(self._verify_state),
         }

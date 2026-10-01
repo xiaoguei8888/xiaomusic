@@ -321,6 +321,48 @@ def test_submit_button_does_not_wrap():
     assert "flex-shrink: 0" in block, "提交按钮未禁止收缩，窄容器会被压窄而折行"
 
 
+def test_submit_verify_surfaces_backend_rejection():
+    """提交验证码必须读后端响应体：接口被拒时返回的也是 HTTP 200。
+
+    实测缺陷（2026-10-01）：11:22:35 的提交后端回 success=false
+    （「当前没有等待中的验证」），前端不读响应体，照样显示
+    「已提交，等待结果...」，随后一直轮询。
+    """
+    js = strip_comments(read("setting.js"))
+    m = re.search(r"function submitVerify\(\)\s*\{(.*?)\n    \}", js, flags=re.S)
+    assert m, "未找到 submitVerify 函数"
+    body = m.group(1)
+    assert "res.success" in body, "submitVerify 没检查 success，后端拒绝会被当成提交成功"
+    assert "finishVerify" in body, "提交被拒后没有结束本轮等待"
+
+
+def test_poll_verify_stops_on_failure_and_timeout():
+    """轮询必须有终局，不能永远显示「等待验证结果...」。
+
+    实测缺陷：一次失败的验证让浏览器每 2s 轮询 /api/login/status，
+    持续 3 小时 54 分（471+ 次），页面上一直只有「等待验证结果...」。
+    """
+    js = strip_comments(read("setting.js"))
+    m = re.search(r"function pollLoginState\(\)\s*\{(.*?)\n    \}", js, flags=re.S)
+    assert m, "未找到 pollLoginState 函数"
+    body = m.group(1)
+    assert "verifyFailed(res)" in body, "轮询不认识后端的验证失败终态"
+    assert "verifyDeadline" in body, "轮询没有超时兜底，后端卡住时前端会一直等"
+    # 每个终局分支都走 finishVerify（它负责停轮询，见下一条测试）
+    assert body.count("finishVerify(") >= 3, "失败/限流/超时分支没有收敛到 finishVerify"
+    # 失败终态来自后端的 verify 字段（sids[sid] 会被 60s 周期的自动登录覆盖）
+    assert 'res.verify.state === "failed"' in js, "没有按后端的 verify 字段判失败"
+
+
+def test_finish_verify_stops_polling_before_writing_text():
+    """先停轮询再写文案：否则 2s 后的轮询会把失败提示覆盖回「等待验证结果...」。"""
+    js = strip_comments(read("setting.js"))
+    m = re.search(r"function finishVerify\([^)]*\)\s*\{(.*?)\n    \}", js, flags=re.S)
+    assert m, "未找到 finishVerify 函数"
+    body = m.group(1)
+    assert "stopVerifyPolling" in body, "finishVerify 没有停止轮询，提示会被覆盖"
+
+
 def test_overdue_qr_copy_removed():
     """删了扫码入口就必须删掉指向它的文案，否则用户会去找不存在的功能。"""
     js = strip_comments(read("setting.js"))

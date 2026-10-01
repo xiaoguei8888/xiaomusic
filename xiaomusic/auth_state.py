@@ -209,7 +209,11 @@ class AuthState:
         if flat.get("passToken"):
             self.data["passToken"] = flat["passToken"]
         for sid, val in flat.items():
-            if isinstance(val, list) and len(val) >= 2:
+            # miservice 的 MiAccount.login() 写入的是 tuple：
+            #   self.token[sid] = (ssecurity, serviceToken)
+            # 只认 list 会静默丢弃每个 sid —— 于是「验证码正确、登录成功」
+            # 也永远写不进 ok，前端只能一直显示「等待验证结果」。
+            if isinstance(val, (list, tuple)) and len(val) >= 2:
                 self.set_sid_ok(sid, val[0], val[1])
         self.save()
 
