@@ -49,6 +49,7 @@ class FakeMina:
         self.volume_calls = []
         self.pause_calls = []
         self.stop_calls = []
+        self.play_calls = []
 
     async def player_get_status(self, device_id):
         self.calls.append(device_id)
@@ -69,6 +70,12 @@ class FakeMina:
 
     async def player_stop(self, device_id):
         self.stop_calls.append(device_id)
+        if self.error is not None:
+            raise self.error
+        return True
+
+    async def player_play(self, device_id):
+        self.play_calls.append(device_id)
         if self.error is not None:
             raise self.error
         return True
@@ -632,5 +639,149 @@ async def test_stop_if_playing_skips_when_idle_and_not_forced(config, fake_log):
     await dev.stop_if_xiaoai_is_playing("dev-1")
 
     assert mina.stop_calls == []
+
+
+# --------------------------------------------------------------------------
+# 「点暂停却从头播放」回归：播放按钮必须真的暂停（断点保留），可断点续播
+# --------------------------------------------------------------------------
+async def test_pause_only_sends_player_pause_and_stops_next_timer(config, fake_log):
+    """暂停 = player_pause（不结束会话），并且要摘掉下一首定时器。"""
+    mina = FakeMina({"status": 1, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], cur_music="a", mina_service=mina)
+    dev.is_playing = True
+    dev._duration = 120
+    dev._start_time = time.time()
+    await dev.set_next_music_timeout(60)
+    assert dev._next_timer is not None
+
+    ok = await dev.pause()
+
+    assert ok is True
+    assert mina.pause_calls == ["dev-1"]
+    assert mina.stop_calls == [], "暂停不能发 player_stop：会话一结束就只能从头播"
+    assert dev.is_playing is False
+    assert dev._next_timer is None, "暂停中若留着定时器，到点会自己播下一首"
+    assert dev._paused_remain > 0
+
+
+async def test_pause_then_resume_reuses_breakpoint(config, fake_log):
+    """续播必须用 player_play 从断点继续，而不是重新下发播放。"""
+    mina = FakeMina({"status": 2, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], cur_music="a", mina_service=mina)
+    dev.is_playing = True
+    dev._duration = 120
+    dev._start_time = time.time()
+    await dev.pause()
+
+    ok = await dev.resume()
+
+    assert ok is True
+    assert mina.play_calls == ["dev-1"], "续播没有调用 player_play"
+    assert dev.is_playing is True
+    assert dev._paused is False
+    assert dev._next_timer is not None, "续播后要按剩余时长重新武装下一首定时器"
+    await dev.cancel_next_timer()
+
+
+async def test_resume_without_pause_session_plays_current_music(config, fake_log):
+    """没有暂停会话（例如已停止）时不能盲发 player_play，退回从头播放当前歌曲。"""
+    mina = FakeMina({"status": 0, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a"], cur_music="a", mina_service=mina)
+    calls = []
+
+    async def fake_play_music_list(list_name, music_name):
+        calls.append((list_name, music_name))
+
+    dev.play_music_list = fake_play_music_list
+
+    ok = await dev.resume()
+
+    assert ok is True
+    assert mina.play_calls == []
+    assert calls == [("全部", "a")]
+
+
+async def test_resume_with_other_song_plays_that_song(config, fake_log):
+    """暂停后用户换了一首歌：应点播那首歌，而不是续播旧断点。"""
+    mina = FakeMina({"status": 2, "volume": 5, "track_list": []})
+    dev = make_device(config, fake_log, songs=["a", "b"], cur_music="a", mina_service=mina)
+    dev.is_playing = True
+    dev._duration = 120
+    dev._start_time = time.time()
+    await dev.pause()
+    calls = []
+
+    async def fake_play_music_list(list_name, music_name):
+        calls.append((list_name, music_name))
+
+    dev.play_music_list = fake_play_music_list
+
+    ok = await dev.resume(music_name="b", list_name="全部")
+
+    assert ok is True
+    assert mina.play_calls == [], "换了歌还去续播旧断点 = 点播失效"
+    assert dev._paused is False
+    assert calls == [("全部", "b")]
+
+
+async def test_pause_requires_cloud_service(config, fake_log):
+    dev = make_device(config, fake_log, songs=["a"], mina_service=None)
+
+    assert await dev.pause() is False
+
+
+def test_paused_offset_keeps_breakpoint_instead_of_zero(config, fake_log):
+    """暂停时进度条要停在断点，不能跳回 0（否则看起来像被重播）。"""
+    dev = make_device(config, fake_log, songs=["a"])
+    dev._cloud_snapshot = {"_ok": True, "status": 2, "position": 42.0, "duration": 180.0}
+    dev._cloud_snapshot_at = time.time()
+
+    assert dev.get_offset_duration() == (42.0, 180.0)
+
+
+def test_display_state_shows_paused_immediately(config, fake_log):
+    """点击暂停后 UI 立刻变成「未播放」，不能等云端慢几秒才更新。"""
+    dev = make_device(config, fake_log, songs=["a"])
+    dev._cloud_snapshot = {"_ok": True, "status": 1, "duration": 10, "position": 1}
+    dev._cloud_snapshot_at = time.time()
+    dev.is_playing = True
+    dev._local_pause_at = time.time()
+
+    playing, snap = dev.get_display_state()
+
+    assert playing is False
+    assert snap is dev._cloud_snapshot
+
+
+def test_display_state_keeps_playing_until_cloud_confirms_resume(config, fake_log):
+    """续播后云端快照还停在 status=2（每 3 秒才刷一次），UI 不能闪回「未播放」。"""
+    dev = make_device(config, fake_log, songs=["a"])
+    dev._cloud_snapshot = {"_ok": True, "status": 2, "duration": 10, "position": 1}
+    dev._cloud_snapshot_at = time.time()
+    dev.is_playing = True
+    dev._local_play_at = time.time()
+
+    assert dev.get_display_state()[0] is True
+
+    # 超过等待窗口仍是 status=2（续播其实失败了）→ 以云端为准
+    dev._local_play_at = time.time() - dev.INTENT_CONFIRM_SEC - 1
+
+    assert dev.get_display_state()[0] is False
+
+
+def test_display_state_waits_for_cloud_after_pause(config, fake_log):
+    """暂停后云端仍报 status=1 时也不闪回「播放中」。"""
+    dev = make_device(config, fake_log, songs=["a"])
+    dev._cloud_snapshot = {"_ok": True, "status": 1, "duration": 10, "position": 1}
+    dev._cloud_snapshot_at = time.time()
+    dev.is_playing = False
+    dev._local_pause_at = time.time()
+
+    assert dev.get_display_state()[0] is False
+
+    # 很长时间后云端还在播 → 说明是被别的方式恢复了，以云端为准
+    dev._local_pause_at = time.time() - dev.INTENT_CONFIRM_SEC - 1
+
+    assert dev.get_display_state()[0] is True
 
 

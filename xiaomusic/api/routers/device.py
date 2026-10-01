@@ -17,6 +17,7 @@ from xiaomusic.api.dependencies import (
 from xiaomusic.api.models import (
     Did,
     DidCmd,
+    DidPlayMusicList,
     DidVolume,
 )
 
@@ -148,3 +149,43 @@ async def stop(data: Did, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
     except Exception as e:
         log.warning(f"Execption {e}")
     return {"ret": "OK"}
+
+
+@router.post("/device/pause")
+async def pause(data: Did, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)):
+    """暂停播放（保留断点，可断点续播）"""
+    did = data.did
+    log.info(f"pause did:{did}")
+    if not xiaomusic.did_exist(did):
+        return {"ret": "Did not exist"}
+
+    try:
+        ok = await xiaomusic.pause(did)
+    except Exception as e:
+        log.warning(f"Execption {e}")
+        ok = False
+    return {"ret": "OK", "paused": bool(ok)}
+
+
+@router.post("/device/resume")
+async def resume(
+    data: DidPlayMusicList, xiaomusic: "XiaoMusic" = Depends(get_xiaomusic)
+):
+    """从暂停处继续播放
+
+    musicname 是面板当前选中的歌：与断点歌曲不同就按点播从头播放，
+    没有暂停会话时同样退回从头播放。
+    """
+    did = data.did
+    log.info(f"resume did:{did} listname:{data.listname} musicname:{data.musicname}")
+    if not xiaomusic.did_exist(did):
+        return {"ret": "Did not exist"}
+
+    try:
+        ok = await xiaomusic.resume(
+            did, music_name=data.musicname, list_name=data.listname
+        )
+    except Exception as e:
+        log.warning(f"Execption {e}")
+        ok = False
+    return {"ret": "OK", "resumed": bool(ok)}

@@ -196,6 +196,8 @@ function updatePullAskAria(isEnabled) {
 // ============ 原有代码 ============
 
 let isPlaying = false;
+// 设备停在断点上（云端 status=2）：播放按钮应断点续播，而不是重头播放
+let devicePaused = false;
 let playModeIndex = 2;
 //重新设计playModes
 const playModes = {
@@ -423,9 +425,74 @@ function play() {
   var did = $("#did").val();
   if (did == "web_device") {
     webPlay();
-  } else {
-    playOnDevice();
+    return;
   }
+  if (isPlaying) {
+    // 设备播放中 → 暂停（保留断点）。旧代码这里会重新下发播放，
+    // 结果「点暂停却从头播放」。
+    pauseOnDevice();
+    return;
+  }
+  if (devicePaused) {
+    // 停在断点上 → 从暂停位置继续
+    resumeOnDevice();
+    return;
+  }
+  // 停止/空闲 → 播放当前选中的歌曲
+  playOnDevice();
+}
+
+// 设备暂停：结束播放但保留断点（音箱侧位置冻结），恢复时从断点继续
+function pauseOnDevice() {
+  var did = $("#did").val();
+  $.ajax({
+    type: "POST",
+    url: "/device/pause",
+    contentType: "application/json; charset=utf-8",
+    data: JSON.stringify({ did: did }),
+    success: (res) => {
+      console.log("pauseOnDevice succ", res);
+      isPlaying = false;
+      devicePaused = true;
+      setPlayPauseIcon(false);
+    },
+    error: () => {
+      console.log("pauseOnDevice failed");
+    },
+  });
+}
+
+// 设备续播：把面板当前选中的歌一起报给后端 —— 与断点歌曲不同就按点播从头播放，
+// 后端没有暂停会话时同样退回从头播放。
+function resumeOnDevice() {
+  var did = $("#did").val();
+  var music_list = $("#music_list").val();
+  // 下拉框可能被写入「【播放中】 」前缀，比对断点歌曲前先剥掉
+  var music_name = String($("#music_name").val() || "").replace(
+    /^【[^】]*】\s*/,
+    "",
+  );
+  $.ajax({
+    type: "POST",
+    url: "/device/resume",
+    contentType: "application/json; charset=utf-8",
+    data: JSON.stringify({
+      did: did,
+      listname: music_list,
+      musicname: music_name,
+    }),
+    success: (res) => {
+      console.log("resumeOnDevice succ", res);
+      devicePaused = false;
+      if (res && res.resumed !== false) {
+        isPlaying = true;
+        setPlayPauseIcon(true);
+      }
+    },
+    error: () => {
+      console.log("resumeOnDevice failed");
+    },
+  });
 }
 
 function playOnDevice() {
@@ -975,6 +1042,8 @@ $("#did").on("change", function () {
   localStorage.setItem("cur_did", did);
   window.did = did;
   console.log("cur_did", did);
+  // 切设备：暂停状态以新设备的 WebSocket 推送为准，先清掉旧设备的状态
+  devicePaused = false;
   reinitForDevice();
 });
 
@@ -1679,6 +1748,8 @@ function startWebSocket(did, token) {
       if (data.ret !== "OK") return;
 
       isPlaying = data.is_playing;
+      // status=2 是云端「暂停」，断点位置保留在音箱侧，可断点续播
+      devicePaused = data.status === 2;
       // 设备播放状态由后端推送；本机播放时图标由 <audio> 事件负责
       if (!isWebDeviceSelected()) {
         setPlayPauseIcon(isPlaying);

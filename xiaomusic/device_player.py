@@ -108,6 +108,10 @@ class XiaoMusicDevice:
         self._poll_task = None
         self._ws_subscribers = 0
         self._local_play_at = 0.0
+        # 用户暂停：断点保留在音箱侧（云端 status=2、位置冻结），可断点续播
+        self._paused = False
+        self._paused_remain = 0.0
+        self._local_pause_at = 0.0
 
         self._play_list = []
 
@@ -158,6 +162,12 @@ class XiaoMusicDevice:
             if snap.get("status") == 1:
                 elapsed = time.time() - self._cloud_snapshot_at
                 offset = snap.get("position", 0) + elapsed
+                if duration > 0:
+                    offset = min(offset, duration)
+                return max(0.0, offset), duration
+            if snap.get("status") == 2:
+                # 暂停：云端位置已冻结，进度条停在断点，不能跳回 0
+                offset = snap.get("position", 0)
                 if duration > 0:
                     offset = min(offset, duration)
                 return max(0.0, offset), duration
@@ -236,19 +246,35 @@ class XiaoMusicDevice:
             self._poll_task.cancel()
             self._poll_task = None
 
-    def get_display_state(self):
-        """供 UI 使用的状态：云端权威值优先，本地意图兜底
+    # 本地播放/暂停动作后等待云端确认的最长时间（云端 status 有几秒延迟）
+    INTENT_CONFIRM_SEC = 10
 
-        本地播放命令发出后的 3 秒内以本地意图为准，避免云端尚未更新
-        导致播放条闪回未播放状态。
+    def get_display_state(self):
+        """供 UI 使用的状态：最近一次本地动作优先，直到云端确认
+
+        云端 status 有几秒延迟：点暂停后云端还报 status=1，点续播后云端还报
+        status=2（快照每 3 秒才刷新一次）。这段时间以本地意图为准，否则按钮
+        点完 UI 会闪回旧状态，用户会以为没点上而重复点、把歌重头播。
+        超过 INTENT_CONFIRM_SEC 云端仍未确认时，以云端为准。
         """
         snap = self._cloud_snapshot
-        if snap and snap.get("_ok"):
-            in_grace = (time.time() - self._local_play_at) < 3
-            if in_grace and self.is_playing and snap.get("status") != 1:
+        if not (snap and snap.get("_ok")):
+            return self.is_playing, None
+        cloud_playing = snap.get("status") == 1
+
+        if self._local_play_at > self._local_pause_at:
+            if cloud_playing or (time.time() - self._local_play_at) < self.INTENT_CONFIRM_SEC:
                 return True, snap
-            return snap.get("status") == 1, snap
-        return self.is_playing, None
+            return False, snap
+
+        if self._local_pause_at > self._local_play_at:
+            if not cloud_playing or (
+                time.time() - self._local_pause_at
+            ) < self.INTENT_CONFIRM_SEC:
+                return False, snap
+            return True, snap
+
+        return cloud_playing, snap
 
     def isplaying(self):
         """UI 显示的播放状态（云端优先）；内部逻辑仍用 self.is_playing"""
@@ -533,6 +559,8 @@ class XiaoMusicDevice:
         # 取消组内所有的下一首歌曲的定时器
         await self.cancel_group_next_timer()
 
+        # 新歌 = 新会话，之前的暂停断点作废
+        self._paused = False
         self.is_playing = True
         self.state.set_track(name)
         self.device.playlist2music[self.device.cur_playlist] = name
@@ -1063,6 +1091,8 @@ class XiaoMusicDevice:
     async def stop(self, arg1=""):
         """停止播放"""
         self._last_cmd = "stop"
+        # 停止会结束播放会话，暂停断点随之作废（续播只能从头开始）
+        self._paused = False
         self.is_playing = False
         if arg1 != "notts":
             await self.do_tts(self.config.stop_tts_msg)
@@ -1071,6 +1101,71 @@ class XiaoMusicDevice:
         await self.cancel_group_next_timer()
         await self.group_force_stop_xiaoai()
         self.log.info("stop now")
+
+    async def pause(self):
+        """暂停播放（保留断点，可断点续播）
+
+        与 stop 的区别：stop 结束会话，再播放只能从头开始；player_pause 会让
+        云端 status=2、播放位置冻结在断点，resume 时 player_play 从断点继续。
+        暂停期间必须取消下一首定时器，否则到点会自己播下一首。
+        """
+        if self.auth_manager.mina_service is None:
+            return False
+        offset, duration = self.get_offset_duration()
+        if duration <= 0:
+            duration = self._duration
+        self._paused_remain = max(duration - offset, 0.1)
+        try:
+            ret = await self.auth_manager.mina_service.player_pause(self.device_id)
+        except Exception as e:
+            self.log.warning(f"pause 失败: {e}")
+            return False
+        self.log.info(
+            f"pause device_id:{self.device_id} ret:{ret} "
+            f"剩余:{self._paused_remain:.1f}s"
+        )
+        if not ret:
+            return False
+        self._paused = True
+        self.is_playing = False
+        self._local_pause_at = time.time()
+        await self.cancel_next_timer()
+        return True
+
+    async def resume(self, music_name="", list_name=""):
+        """从暂停处继续播放
+
+        没有暂停中的会话（例如已停止），或用户在暂停后点了别的歌时，
+        退回「从头播放」——播放按钮因此永远有反馈。
+        """
+        # 网页面板传来的「当前选中歌曲」：与断点歌曲不同 = 用户在暂停后点了别的歌
+        requested = bool(music_name) and music_name != self.get_cur_music()
+        if requested:
+            self._paused = False
+        if self._paused and self.auth_manager.mina_service is not None:
+            try:
+                ret = await self.auth_manager.mina_service.player_play(self.device_id)
+            except Exception as e:
+                self.log.warning(f"resume 失败: {e}")
+                ret = False
+            self.log.info(f"resume device_id:{self.device_id} ret:{ret}")
+            if ret:
+                self._paused = False
+                self.is_playing = True
+                self._local_play_at = time.time()
+                # 本地秒表兜底（云端快照不可用时用它算进度）
+                self._start_time = time.time()
+                self._paused_time = 0
+                if self._paused_remain > 0:
+                    await self.set_next_music_timeout(self._paused_remain)
+                return True
+            self._paused = False
+
+        name = music_name or self.get_cur_music()
+        if not name:
+            return False
+        await self.play_music_list(list_name or self.device.cur_playlist, name)
+        return True
 
     async def group_force_stop_xiaoai(self):
         """强制停止组内所有设备"""

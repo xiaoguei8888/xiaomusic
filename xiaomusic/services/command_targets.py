@@ -80,6 +80,16 @@ class CommandTargets:
     async def stop(self, did="", arg1="", **kwargs):
         return await self.device_manager.devices[did].stop(arg1=arg1)
 
+    async def pause(self, did="", **kwargs):
+        """暂停（保留断点，可断点续播）"""
+        return await self.device_manager.devices[did].pause()
+
+    async def resume(self, did="", music_name="", list_name="", **kwargs):
+        """从暂停处继续播放（music_name 是面板当前选中的歌）"""
+        return await self.device_manager.devices[did].resume(
+            music_name=music_name, list_name=list_name
+        )
+
     async def stop_after_minute(self, did="", arg1=0, **kwargs):
         try:
             # 尝试阿拉伯数字转换中文数字

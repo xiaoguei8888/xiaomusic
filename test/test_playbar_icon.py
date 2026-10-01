@@ -64,3 +64,51 @@ def test_no_icon_write_bypasses_helper():
     """历史写法 playMusicIcon.textContent = ... 必须消失，否则又会两边打架。"""
     js = strip_comments(read("md.js"))
     assert "playMusicIcon.textContent" not in js, "仍有绕过 setPlayPauseIcon 的图标写入"
+
+
+# --------------------------------------------------------------------------
+# 「点暂停却从头播放」回归：按钮必须是真正的播放/暂停切换
+# --------------------------------------------------------------------------
+def play_body(js: str) -> str:
+    m = re.search(r"function play\(\)\s*\{(.*?)\n\}", js, flags=re.S)
+    assert m, "未找到 play()"
+    return m.group(1)
+
+
+def test_device_playing_pauses_instead_of_replaying():
+    """设备播放中点按钮必须走暂停，不能重新下发播放（那就是从头播放）。"""
+    body = play_body(strip_comments(read("md.js")))
+    assert "pauseOnDevice()" in body, "播放中没有暂停分支"
+    assert "isPlaying" in body, "没有按当前播放状态判断"
+    # 暂停分支要直接 return，否则仍会落到 playOnDevice()
+    pause_branch = re.search(r"if\s*\(isPlaying\)\s*\{(.*?)\n\s*\}", body, flags=re.S)
+    assert pause_branch, "未找到 isPlaying 分支"
+    assert "playOnDevice" not in pause_branch.group(1), "暂停分支里又调用了播放"
+
+
+def test_device_paused_resumes_from_breakpoint():
+    body = play_body(strip_comments(read("md.js")))
+    assert "devicePaused" in body, "没有区分「暂停中」和「停止」"
+    assert "resumeOnDevice()" in body, "暂停后点击按钮没有断点续播"
+
+
+def test_pause_and_resume_hit_device_endpoints():
+    js = strip_comments(read("md.js"))
+    m = re.search(r"function pauseOnDevice\(\)\s*\{(.*?)\n\}", js, flags=re.S)
+    assert m, "未找到 pauseOnDevice"
+    assert "/device/pause" in m.group(1), "暂停没有打到 /device/pause"
+    m = re.search(r"function resumeOnDevice\(\)\s*\{(.*?)\n\}", js, flags=re.S)
+    assert m, "未找到 resumeOnDevice"
+    body = m.group(1)
+    assert "/device/resume" in body, "续播没有打到 /device/resume"
+    assert "musicname" in body, "续播没有把面板选中的歌报给后端（换歌会变成续播旧断点）"
+
+
+def test_ws_tracks_cloud_pause_status():
+    """云端 status=2 是暂停（断点保留），前端要据此决定续播而非重播。"""
+    js = strip_comments(read("md.js"))
+    m = re.search(r"ws\.onmessage = \(event\) => \{(.*?)\n    \};", js, flags=re.S)
+    assert m, "未找到 WebSocket onmessage"
+    body = m.group(1)
+    assert "data.status === 2" in body, "没有识别云端暂停状态"
+    assert "devicePaused" in body, "没有记录暂停状态"
