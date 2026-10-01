@@ -6,3 +6,11 @@ repos:
     - push
   repo: https://github.com/commitizen-tools/commitizen
   rev: v3.27.0
+- repo: local
+  hooks:
+  - id: check-secrets
+    name: 禁止提交账号/密码/token（scripts/check_secrets.py）
+    entry: python3 scripts/check_secrets.py
+    language: system
+    pass_filenames: true
+    always_run: false

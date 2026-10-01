@@ -175,6 +175,17 @@ reference/
 .aone_copilot/
 .idea/
 
+# 凭据类文件：即使脱离 conf/ 目录也不允许入库（配合 scripts/check_secrets.py）
+.mi.token
+**/.mi.token
+**/auth.json
+**/.device_id
+**/.auth_backup/
+**/*.token
+**/setting.json
+.env.*
+!.env.example
+
 # M0 精简版：运行时垃圾文件
 xiaomusic.log.txt
 00-plugin_debug.log
